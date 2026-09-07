@@ -39,4 +39,4 @@ coverage/
 
 # Electron
 *.js.map
-*.d.ts
+
