@@ -6,18 +6,18 @@ import { cn } from '../lib/utils'
 type Filter = 'all' | LogSource
 
 const levelColor: Record<string, string> = {
-  log: 'text-foreground',
-  info: 'text-blue-500',
-  warn: 'text-amber-500',
-  error: 'text-red-500',
+  log: 'text-zinc-300',
+  info: 'text-blue-400',
+  warn: 'text-amber-400',
+  error: 'text-red-400',
   debug: 'text-zinc-500',
-  system: 'text-purple-500'
+  system: 'text-purple-400'
 }
 
 const sourceBadge: Record<LogSource, string> = {
-  console: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20',
-  bridge: 'bg-primary/10 text-primary border-primary/20',
-  system: 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+  console: 'bg-zinc-700/40 text-zinc-400 border-zinc-600/30',
+  bridge: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+  system: 'bg-purple-500/15 text-purple-400 border-purple-500/20'
 }
 
 function formatTime(ts: number): string {
@@ -31,9 +31,9 @@ function LogRow({ entry }: { entry: LogEntry }) {
   const hasDetail = entry.detail !== undefined && entry.detail !== null
 
   return (
-    <div className="border-b border-border/60 px-2 py-1 font-mono text-[11px] leading-5">
+    <div className="border-b border-zinc-800/60 px-2 py-1 font-mono text-[11px] leading-5 hover:bg-zinc-900">
       <div className="flex items-start gap-2">
-        <span className="shrink-0 text-zinc-400">{formatTime(entry.timestamp)}</span>
+        <span className="shrink-0 text-zinc-600">{formatTime(entry.timestamp)}</span>
         <span
           className={cn(
             'inline-flex shrink-0 items-center rounded border px-1 text-[10px] uppercase',
@@ -46,29 +46,29 @@ function LogRow({ entry }: { entry: LogEntry }) {
           <span
             className={cn(
               'shrink-0 font-bold',
-              entry.direction === 'in' ? 'text-emerald-500' : 'text-orange-500'
+              entry.direction === 'in' ? 'text-emerald-400' : 'text-orange-400'
             )}
           >
             {entry.direction === 'in' ? '◀' : '▶'}
           </span>
         )}
         {entry.action && (
-          <span className="shrink-0 font-semibold text-primary">{entry.action}</span>
+          <span className="shrink-0 font-semibold text-blue-400">{entry.action}</span>
         )}
-        <span className="min-w-0 flex-1 break-all text-foreground/80">
+        <span className={cn('min-w-0 flex-1 break-all', levelColor[entry.level] ?? 'text-zinc-300')}>
           {entry.message}
         </span>
         {hasDetail && (
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="shrink-0 text-[10px] text-zinc-400 hover:text-foreground"
+            className="shrink-0 text-[10px] text-zinc-500 hover:text-zinc-300"
           >
             {expanded ? '收起' : '详情'}
           </button>
         )}
       </div>
       {expanded && hasDetail && (
-        <pre className="mt-1 whitespace-pre-wrap break-all rounded bg-zinc-500/5 p-2 text-[10px] text-zinc-400">
+        <pre className="mt-1 whitespace-pre-wrap break-all rounded bg-zinc-800/50 p-2 text-[10px] text-zinc-400">
           {JSON.stringify(entry.detail, null, 2)}
         </pre>
       )}
@@ -80,6 +80,7 @@ export function LogPanel() {
   const logs = useLogStore((s) => s.logs)
   const clearLogs = useLogStore((s) => s.clearLogs)
   const [filter, setFilter] = useState<Filter>('all')
+  const [autoScroll, setAutoScroll] = useState(true)
   const listRef = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
@@ -88,9 +89,10 @@ export function LogPanel() {
   }, [logs, filter])
 
   useEffect(() => {
+    if (!autoScroll) return
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [filtered.length])
+  }, [filtered.length, autoScroll])
 
   const tabs: { key: Filter; label: string }[] = [
     { key: 'all', label: '全部' },
@@ -100,8 +102,9 @@ export function LogPanel() {
   ]
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+    <div className="flex h-full flex-col bg-zinc-950 text-zinc-300">
+      {/* 标签栏 */}
+      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
         <div className="flex gap-1">
           {tabs.map((t) => (
             <button
@@ -110,24 +113,36 @@ export function LogPanel() {
               className={cn(
                 'rounded px-2 py-1 text-xs transition-colors',
                 filter === t.key
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
               )}
             >
               {t.label}
             </button>
           ))}
         </div>
-        <button
-          onClick={clearLogs}
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          清空
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-1 text-[10px] text-zinc-500">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll(e.target.checked)}
+              className="h-3 w-3 accent-blue-500"
+            />
+            自动滚动
+          </label>
+          <button
+            onClick={clearLogs}
+            className="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            清空
+          </button>
+        </div>
       </div>
+      {/* 日志列表 */}
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="p-6 text-center text-xs text-muted-foreground">
+          <div className="p-6 text-center text-xs text-zinc-600">
             暂无日志
           </div>
         ) : (

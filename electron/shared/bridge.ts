@@ -34,6 +34,8 @@ export interface BridgeApi {
   httpRequest: (payload: HttpRequestPayload) => Promise<unknown>
   selectFile: (allowList?: string[]) => Promise<string | null>
   saveImage: (payload: SaveImagePayload) => Promise<void>
+  toggleDevTools?: () => void
+  toggleWebviewDevTools?: () => void
 }
 
 declare global {

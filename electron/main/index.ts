@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, webContents, globalShortcut } from 'electron'
 import { join } from 'node:path'
 import Store from 'electron-store'
 import { writeFile } from 'node:fs/promises'
@@ -8,6 +8,18 @@ import {
   type HttpRequestPayload,
   type SaveImagePayload
 } from '../shared/bridge'
+import { loadConfig, saveConfig, type AppConfig } from './config'
+import {
+  saveToken,
+  getToken,
+  getUserID,
+  isTokenValid,
+  clearToken,
+  getAuthInfo,
+  getAuthTokens
+} from './auth'
+import { login as loginApi, type LoginParams, type LoginResult } from './api'
+import { sendEmailCode } from './walletApi'
 
 // 全局持久化存储实例
 const store = new Store({
@@ -37,6 +49,8 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  setupDevToolsShortcuts(mainWindow.webContents)
 
   // 开发环境加载 dev server，生产环境加载打包产物
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -183,9 +197,184 @@ function registerBridgeIpc(): void {
   )
 }
 
+/**
+ * 注册认证相关 IPC 处理器
+ */
+function registerAuthIpc(): void {
+  ipcMain.handle(
+    'auth:login',
+    async (_event, params: LoginParams) => {
+      console.log('[Auth IPC] >>> 收到前端登录请求, 账号:', params.email)
+      try {
+        const result = await loginApi(params)
+        console.log('[Auth IPC] <<< 登录 API 解析结果:', JSON.stringify(result))
+
+        const chatToken = (result.data?.chatToken || result.data?.token || '') as string
+        if (result.errCode === 0 && result.data && chatToken) {
+          saveToken({
+            token: chatToken,
+            refreshToken: result.data.refreshToken || '',
+            expireTime: result.data.expireTime || (result.data.chatTokenExpire as number) || 7776000,
+            userID: result.data.userID,
+            walletToken: result.data.walletToken,
+            secretKey: result.data.secretKey,
+            kbitToken: result.data.kbitToken,
+            chatToken: chatToken
+          })
+          console.log('[Auth IPC] 登录成功，Token 已保存, userID:', result.data.userID)
+          return { success: true, data: { ...result.data, token: chatToken } }
+        }
+        console.warn('[Auth IPC] 登录失败/需验证, errCode:', result.errCode, 'errMsg:', result.errMsg, 'errDlt:', result.errDlt)
+        const detailedMsg = result.errDlt
+          ? (result.errMsg && result.errMsg !== result.errDlt ? `${result.errDlt} (${result.errMsg})` : result.errDlt)
+          : (result.errMsg || (result.errCode !== undefined ? `登录失败 (错误码: ${result.errCode})` : '登录失败'))
+        return {
+          success: false,
+          errMsg: detailedMsg,
+          errCode: result.errCode,
+          errDlt: result.errDlt
+        }
+      } catch (error: any) {
+        console.error('[Auth IPC] 登录异常捕获:', error)
+        const respData = error?.response?.data
+        const errDlt = respData?.errDlt || respData?.ErrDlt || ''
+        const baseMsg = respData?.ErrMsg || respData?.errMsg || respData?.message || error?.message || '登录请求失败'
+        const errMsg = errDlt ? `${errDlt} (${baseMsg})` : baseMsg
+        const errCode = respData?.ErrCode ?? respData?.errCode ?? -1
+        return {
+          success: false,
+          errMsg,
+          errCode,
+          errDlt
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'auth:sendEmailCode',
+    async (_event, params: { email: string; codeType: number }) => {
+      try {
+        const result = await sendEmailCode(params)
+        if (result.errCode && result.errCode !== 0) {
+          return { success: false, errMsg: result.errMsg || '发送验证码失败' }
+        }
+        return { success: true }
+      } catch (error: unknown) {
+        const errMsg = error instanceof Error ? error.message : '发送验证码失败'
+        return { success: false, errMsg }
+      }
+    }
+  )
+
+  ipcMain.handle('auth:getToken', () => getToken())
+  ipcMain.handle('auth:isLoggedIn', () => isTokenValid())
+  ipcMain.handle('auth:getInfo', () => getAuthInfo())
+  ipcMain.handle('auth:getTokens', () => getAuthTokens())
+  ipcMain.handle('auth:getUserID', () => getUserID())
+
+  ipcMain.on('auth:logout', () => {
+    clearToken()
+  })
+}
+
+/**
+ * 注册配置相关 IPC 处理器
+ */
+function registerConfigIpc(): void {
+  ipcMain.handle('config:get', () => loadConfig())
+  ipcMain.handle('config:set', (_event, patch: Partial<AppConfig>) => {
+    const updated = saveConfig(patch)
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('config:changed', updated)
+    })
+    return updated
+  })
+}
+
+/**
+ * 为指定的 WebContents 绑定 DevTools 快捷键 (F12, Cmd+Opt+I / Ctrl+Shift+I)
+ */
+function setupDevToolsShortcuts(contents: Electron.WebContents): void {
+  contents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      const isF12 = input.key === 'F12'
+      const isDevTools =
+        (input.control || input.meta) &&
+        (input.alt || input.shift) &&
+        input.key.toLowerCase() === 'i'
+      if (isF12 || isDevTools) {
+        event.preventDefault()
+        if (contents.isDevToolsOpened()) {
+          contents.closeDevTools()
+        } else {
+          contents.openDevTools({ mode: 'detach' })
+        }
+      }
+    }
+  })
+}
+
+/**
+ * 注册 DevTools 相关的 IPC 处理与全局快捷键
+ */
+function registerDevTools(): void {
+  // 监听所有新创建的 WebContents (包含 BrowserWindow 及各类 <webview>)
+  app.on('web-contents-created', (_event, contents) => {
+    setupDevToolsShortcuts(contents)
+  })
+
+  // IPC 切换主窗口 DevTools
+  ipcMain.on('devtools:toggleMain', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools()
+      } else {
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }
+    }
+  })
+
+  // IPC 切换 Webview DevTools
+  ipcMain.on('devtools:toggleWebview', () => {
+    for (const wc of webContents.getAllWebContents()) {
+      if (wc !== mainWindow?.webContents && !wc.isDestroyed()) {
+        if (wc.isDevToolsOpened()) {
+          wc.closeDevTools()
+        } else {
+          wc.openDevTools({ mode: 'detach' })
+        }
+      }
+    }
+  })
+
+  // 全局快捷键注册 (F12, Cmd+Opt+I, Ctrl+Shift+I)
+  const toggleFocusedDevTools = () => {
+    const focused = webContents.getFocusedWebContents() || mainWindow?.webContents
+    if (focused && !focused.isDestroyed()) {
+      if (focused.isDevToolsOpened()) {
+        focused.closeDevTools()
+      } else {
+        focused.openDevTools({ mode: 'detach' })
+      }
+    }
+  }
+
+  try {
+    globalShortcut.register('F12', toggleFocusedDevTools)
+    globalShortcut.register('CommandOrControl+Shift+I', toggleFocusedDevTools)
+    globalShortcut.register('CommandOrControl+Alt+I', toggleFocusedDevTools)
+  } catch (err) {
+    console.warn('[DevTools] 注册全局快捷键异常:', err)
+  }
+}
+
 app.whenReady().then(() => {
   registerStoreIpc()
   registerBridgeIpc()
+  registerAuthIpc()
+  registerConfigIpc()
+  registerDevTools()
   createWindow()
 
   app.on('activate', () => {
@@ -193,6 +382,10 @@ app.whenReady().then(() => {
       createWindow()
     }
   })
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })
 
 app.on('window-all-closed', () => {
