@@ -8,8 +8,28 @@ import { contextBridge, ipcRenderer } from 'electron'
  *
  * 还原 Flutter webview_flutter 中 addJavaScriptChannel('FlutterWebView') 的行为。
  */
-contextBridge.exposeInMainWorld('FlutterWebView', {
-  postMessage: (message: string) => {
-    ipcRenderer.sendToHost('bridge-message', message)
+try {
+  if (contextBridge && typeof contextBridge.exposeInMainWorld === 'function') {
+    contextBridge.exposeInMainWorld('FlutterWebView', {
+      postMessage: (message: string) => {
+        ipcRenderer.sendToHost('bridge-message', message)
+      }
+    })
+  } else {
+    ;(window as any).FlutterWebView = {
+      postMessage: (message: string) => {
+        ipcRenderer.sendToHost('bridge-message', message)
+      }
+    }
   }
-})
+} catch {
+  try {
+    ;(window as any).FlutterWebView = {
+      postMessage: (message: string) => {
+        ipcRenderer.sendToHost('bridge-message', message)
+      }
+    }
+  } catch {
+    // 忽略
+  }
+}

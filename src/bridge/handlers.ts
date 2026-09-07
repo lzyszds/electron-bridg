@@ -1,6 +1,6 @@
 import type { WebviewTag } from 'electron'
 import { JsBridge } from './jsbridge'
-import type { BridgeConfig } from './types'
+import { DEFAULT_PUB_KEY, type BridgeConfig } from './types'
 import { getDeviceProfile } from './device-profiles'
 
 export interface HandlerDeps {
@@ -10,6 +10,40 @@ export interface HandlerDeps {
   getConfig: () => BridgeConfig
   /** 记录系统日志 */
   log: (message: string, detail?: unknown) => void
+  /** Token 错误或过期回调 */
+  onAuthExpired?: (reason?: string) => void
+}
+
+/**
+ * 校验请求返回是否为 Token 错误或已过期
+ */
+function checkAuthError(status: number, data: unknown): string | null {
+  if (status === 401) return 'HTTP 401 登录已失效'
+  if (status === 403) return 'HTTP 403 权限不足或登录过期'
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>
+    const errCode = obj.errCode ?? obj.ErrCode ?? obj.code ?? obj.Code
+    const errMsg = String(obj.errMsg ?? obj.ErrMsg ?? obj.errDlt ?? obj.ErrDlt ?? obj.message ?? '')
+
+    // 常见 Token 错误码 (1001: 未登录/Token错误, 1004: Token过期, 401: Unauthorized)
+    if (errCode === 1001 || errCode === 1004 || errCode === 401) {
+      return errMsg || `Token 错误/已过期 (错误码: ${errCode})`
+    }
+
+    // 关键词匹配
+    if (
+      /token.*(expired|invalid|null|empty)/i.test(errMsg) ||
+      /invalid.*token/i.test(errMsg) ||
+      /token.*过期/i.test(errMsg) ||
+      /登录.*过期/i.test(errMsg) ||
+      /未登录/i.test(errMsg) ||
+      /请重新登录/i.test(errMsg) ||
+      /TokenException/i.test(errMsg)
+    ) {
+      return errMsg
+    }
+  }
+  return null
 }
 
 function extractUrl(data: unknown): string | undefined {
@@ -31,8 +65,19 @@ function resolvePlatform(config: BridgeConfig): 'android' | 'ios' {
 }
 
 function buildAuthData(config: BridgeConfig): Record<string, unknown> {
-  const { secretKey, token, chatToken, imToken } = config.auth
-  return { secretKey, token, chatToken, imToken }
+  const { secretKey, token, chatToken, imToken, userID } = config.auth
+  const base = {
+    secretKey,
+    token,
+    chatToken,
+    imToken,
+    userID: userID || config.auth.userID
+  }
+  // 兼容 H5 直接读 res.secretKey 和 res.data.secretKey 两种风格
+  return {
+    ...base,
+    data: base
+  }
 }
 
 /**
@@ -111,13 +156,13 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
   // 刷新 token
   bridge.registerHandler('refreshToken', async (data) => {
     log('[refreshToken]', data)
-    return { data: buildAuthData(getConfig()) }
+    return buildAuthData(getConfig())
   })
 
   // 获取认证信息
   bridge.registerHandler('getAuth', async (data) => {
     log('[getAuth]', data)
-    return { data: buildAuthData(getConfig()) }
+    return buildAuthData(getConfig())
   })
 
   // 获取初始化数据
@@ -221,7 +266,27 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
       header: obj.header,
       body: obj.body
     })) as { status: number; data: unknown }
+
+    const authErr = checkAuthError(res?.status, res?.data)
+    if (authErr) {
+      log(`[proxy] 发现 Token 错误/已过期: ${authErr}，强制退出登录`, res)
+      deps.onAuthExpired?.(authErr)
+    }
+
     return res?.data
+  })
+
+  // 网页端请求去登录/重新登录
+  bridge.registerHandler('toLogin', async (data) => {
+    log('[toLogin] 网页请求跳转登录', data)
+    deps.onAuthExpired?.('网页请求重新登录')
+    return true
+  })
+
+  bridge.registerHandler('goLogin', async (data) => {
+    log('[goLogin] 网页请求跳转登录', data)
+    deps.onAuthExpired?.('网页请求重新登录')
+    return true
   })
 
   // AppsFlyer 埋点（仅记录）
@@ -238,8 +303,8 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
 
   // 获取公钥
   bridge.registerHandler('pubKey', async () => {
-    const key = getConfig().auth.pubKey
-    log(`[pubKey] ${key ? 'return key' : 'empty'}`)
+    const key = getConfig().auth.pubKey || DEFAULT_PUB_KEY
+    log(`[pubKey] return key (${key ? key.slice(0, 30) + '...' : 'empty'})`)
     return key
   })
 

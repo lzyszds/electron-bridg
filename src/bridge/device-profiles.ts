@@ -9,6 +9,33 @@ export interface DeviceProfile {
 
 export const DEVICE_PROFILES: DeviceProfile[] = [
   {
+    id: 'iphone-17-pro',
+    name: 'iPhone 17 Pro',
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1',
+    width: 402,
+    height: 874,
+    deviceScaleFactor: 3
+  },
+  {
+    id: 'iphone-17',
+    name: 'iPhone 17',
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1',
+    width: 393,
+    height: 852,
+    deviceScaleFactor: 3
+  },
+  {
+    id: 'iphone-17-pro-max',
+    name: 'iPhone 17 Pro Max',
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1',
+    width: 440,
+    height: 956,
+    deviceScaleFactor: 3
+  },
+  {
     id: 'iphone-15-pro',
     name: 'iPhone 15 Pro',
     userAgent:
@@ -16,15 +43,6 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
     width: 393,
     height: 852,
     deviceScaleFactor: 3
-  },
-  {
-    id: 'iphone-se',
-    name: 'iPhone SE',
-    userAgent:
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-    width: 375,
-    height: 667,
-    deviceScaleFactor: 2
   },
   {
     id: 'pixel-8-pro',
@@ -36,17 +54,17 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
     deviceScaleFactor: 2.625
   },
   {
-    id: 'android-webview',
-    name: 'Android WebView',
+    id: 'iphone-se',
+    name: 'iPhone SE',
     userAgent:
-      'Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
-    width: 360,
-    height: 780,
-    deviceScaleFactor: 2.75
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    width: 375,
+    height: 667,
+    deviceScaleFactor: 2
   }
 ]
 
-export const DEFAULT_DEVICE_ID = 'iphone-15-pro'
+export const DEFAULT_DEVICE_ID = 'iphone-17-pro'
 
 export function getDeviceProfile(id: string): DeviceProfile {
   return DEVICE_PROFILES.find((d) => d.id === id) ?? DEVICE_PROFILES[0]

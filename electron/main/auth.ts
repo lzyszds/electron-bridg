@@ -76,7 +76,9 @@ export function saveToken(data: {
   const store = loadStore()
   store.token = data.token
   store.refreshToken = data.refreshToken
-  store.expireTime = data.expireTime
+  const nowSec = Math.floor(Date.now() / 1000)
+  // 如果 expireTime 是相对秒数（如 7776000），换算为绝对秒级时间戳
+  store.expireTime = data.expireTime > nowSec ? data.expireTime : nowSec + (data.expireTime || 7776000)
   store.userID = data.userID
   store.loginTime = new Date().toISOString()
   store.walletToken = data.walletToken ?? ''
@@ -89,15 +91,16 @@ export function saveToken(data: {
 export function getAuthTokens(): AuthTokenPayload {
   const store = loadStore()
   return {
-    token: store.walletToken,
+    token: store.walletToken || store.token,
     secretKey: store.secretKey,
     kbitToken: store.kbitToken,
-    chatToken: store.chatToken
+    chatToken: store.chatToken || store.token
   }
 }
 
 export function getToken(): string {
-  return loadStore().token
+  const store = loadStore()
+  return store.token || store.chatToken || store.walletToken
 }
 
 export function getUserID(): string {
@@ -106,7 +109,8 @@ export function getUserID(): string {
 
 export function isTokenValid(): boolean {
   const store = loadStore()
-  return !!store.token && Date.now() / 1000 < store.expireTime
+  // 只要本地存储着 token，直接允许进入页面，过期或错误由运行时请求时捕获强制退出
+  return !!(store.token || store.chatToken || store.walletToken)
 }
 
 export function clearToken() {

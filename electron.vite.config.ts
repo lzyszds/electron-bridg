@@ -21,6 +21,10 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'electron/preload/index.ts'),
           'bridge-preload': resolve(__dirname, 'electron/preload/bridge-preload.ts')
+        },
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs'
         }
       }
     }

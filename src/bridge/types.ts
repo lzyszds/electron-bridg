@@ -31,6 +31,16 @@ export interface LogEntry {
   timestamp: number
 }
 
+export const DEFAULT_PUB_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3wgR1Je/AEQxOWIfnFaF
+J2uf06HnIp4DDdfXaKNmyBlA2XYMlwJ0dd9KO+4egV9zHld9QMvIH5JxmffNU+zA
+tmTTptO4BeVKrKbyZM8JSY4jR1dW0X+tJz0IIR+KrV5ukBZuraoFyxs/ZcdXXdsd
+8aFgk9e02c38ax0eijus3CgASGFmFpkXvsgL1UVMcjHR9jT0f88hphwv2G4SJBiK
+tKjFlAY/753whBe326nlybHRsujfOVOLyoY6YvF/FKPc9mjrABud/rtjajQbgIMQ
+XplC0SfrL6y4iPdhjgYPWo+6g+KDGMcvte1PomHwUX/nGFcs1c8RcmULD9sz+MGh
+9QIDAQAB
+-----END PUBLIC KEY-----`
+
 export const defaultAuthConfig: AuthConfig = {
   secretKey: '',
   token: '',
@@ -38,7 +48,7 @@ export const defaultAuthConfig: AuthConfig = {
   imToken: '',
   userID: '',
   groupID: '',
-  pubKey: '',
+  pubKey: DEFAULT_PUB_KEY,
   platform: 'auto'
 }
 

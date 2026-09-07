@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 
 const COUNTDOWN_SECONDS = 60
 
@@ -255,7 +256,7 @@ export default function SecurityVerifyDialog({
             className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
             onClick={onClose}
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 

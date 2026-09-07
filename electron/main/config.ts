@@ -3,8 +3,16 @@ import { join } from 'node:path'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 
 export interface AppConfig {
-  /** H5 镜像页面地址 */
+  /** H5 镜像基础域名（如 https://module.qqlink.info 或 https://test.qqlink.info 或 http://localhost:3000） */
+  h5BaseUrl: string
+  /** 默认/最后访问的完整 URL */
   webviewUrl: string
+  /** 默认/最后选中的模块 ID */
+  lastModuleId?: string
+  /** 语言前缀 */
+  locale: string
+  /** 是否附带调试参数 safeArea=50&vconsole=yes */
+  withDebugParams: boolean
   /** 业务接口服务器地址（登录 API） */
   apiBaseUrl: string
   /** 钱包接口服务器地址（发送邮箱验证码等） */
@@ -17,7 +25,11 @@ export interface AppConfig {
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
-  webviewUrl: 'https://test.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
+  h5BaseUrl: 'https://module.qqlink.info',
+  webviewUrl: 'https://module.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
+  lastModuleId: 'financial-usStocks',
+  locale: 'zh-hans',
+  withDebugParams: true,
   apiBaseUrl: 'https://chat.qqlink.live/chat',
   walletUrl: 'https://api.wallet8.top',
   proxy: {
@@ -38,7 +50,11 @@ function getPath(): string {
 
 function merge(base: AppConfig, patch: Partial<AppConfig>): AppConfig {
   return {
+    h5BaseUrl: patch.h5BaseUrl ?? base.h5BaseUrl ?? 'https://module.qqlink.info',
     webviewUrl: patch.webviewUrl ?? base.webviewUrl,
+    lastModuleId: patch.lastModuleId ?? base.lastModuleId ?? 'financial-usStocks',
+    locale: patch.locale ?? base.locale ?? 'zh-hans',
+    withDebugParams: patch.withDebugParams ?? base.withDebugParams ?? true,
     apiBaseUrl: patch.apiBaseUrl ?? base.apiBaseUrl,
     walletUrl: patch.walletUrl ?? base.walletUrl,
     proxy: { ...base.proxy, ...patch.proxy }

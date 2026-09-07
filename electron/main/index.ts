@@ -1,7 +1,13 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, webContents, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, webContents, globalShortcut, session } from 'electron'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import Store from 'electron-store'
 import { writeFile } from 'node:fs/promises'
+
+// 忽略自签名/测试环境 SSL 证书错误，还原移动端环境
+app.commandLine.appendSwitch('ignore-certificate-errors')
+app.commandLine.appendSwitch('disable-site-isolation-trials')
+app.commandLine.appendSwitch('disable-web-security')
 import { STORE_CHANNELS } from '../shared/types'
 import {
   BRIDGE_CHANNELS,
@@ -38,7 +44,9 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: existsSync(join(__dirname, '../preload/index.cjs'))
+        ? join(__dirname, '../preload/index.cjs')
+        : join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
@@ -100,7 +108,8 @@ function registerStoreIpc(): void {
 function registerBridgeIpc(): void {
   // 返回 webview preload 脚本的绝对路径
   ipcMain.handle(BRIDGE_CHANNELS.GET_PRELOAD_PATH, () => {
-    return join(__dirname, '../preload/bridge-preload.mjs')
+    const cjs = join(__dirname, '../preload/bridge-preload.cjs')
+    return existsSync(cjs) ? cjs : join(__dirname, '../preload/bridge-preload.mjs')
   })
 
   // 外部浏览器/系统默认应用打开链接（launchUrl handler）
@@ -369,7 +378,61 @@ function registerDevTools(): void {
   }
 }
 
+/**
+ * 还原移动端环境：禁用 CSP 限制，全放行跨域 (CORS)，允许测试/内部环境 SSL
+ */
+function setupNetworkSecurity(): void {
+  // 拦截网络请求重定向：将被 H5 meta CSP 阻断的 qqlink.xin 域名映射到合规且在 CSP 白名单内的 qqlink.live
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.includes('api.qqlink.xin')) {
+      const redirectURL = details.url.replace('api.qqlink.xin', 'api.qqlink.live')
+      return callback({ redirectURL })
+    }
+    if (details.url.includes('chat.qqlink.xin')) {
+      const redirectURL = details.url.replace('chat.qqlink.xin', 'chat.qqlink.live')
+      return callback({ redirectURL })
+    }
+    if (details.url.includes('file.qqlink.xin')) {
+      const redirectURL = details.url.replace('file.qqlink.xin', 'file.qqlink.live')
+      return callback({ redirectURL })
+    }
+    // 让节点探测优先选 qqlink.live，避开 qqlink.xin 被 H5 页面内部 meta CSP 阻断
+    if (details.url.includes('configQQLink.txt')) {
+      return callback({
+        redirectURL: 'data:text/plain;charset=utf-8,qqlink.live,qqlink.live'
+      })
+    }
+    callback({})
+  })
+
+  // 对所有网络请求剥除阻止跨域的 CSP 头，并增加 CORS 支持
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders }
+
+    // 移除阻断请求的 CSP 头
+    delete responseHeaders['content-security-policy']
+    delete responseHeaders['Content-Security-Policy']
+    delete responseHeaders['content-security-policy-report-only']
+    delete responseHeaders['Content-Security-Policy-Report-Only']
+
+    // 允许跨域访问（还原移动端原生 Webview 无 CORS 限制的环境）
+    responseHeaders['access-control-allow-origin'] = ['*']
+    responseHeaders['access-control-allow-methods'] = ['GET, POST, PUT, DELETE, PATCH, OPTIONS']
+    responseHeaders['access-control-allow-headers'] = ['*']
+    responseHeaders['access-control-allow-credentials'] = ['true']
+
+    callback({ responseHeaders })
+  })
+
+  // 证书错误处理（允许测试环境与特定内网安全握手）
+  app.on('certificate-error', (event, _webContents, _url, _error, _certificate, callback) => {
+    event.preventDefault()
+    callback(true)
+  })
+}
+
 app.whenReady().then(() => {
+  setupNetworkSecurity()
   registerStoreIpc()
   registerBridgeIpc()
   registerAuthIpc()

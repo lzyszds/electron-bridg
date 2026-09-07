@@ -49,7 +49,11 @@ interface AuthTokens {
 }
 
 interface AppConfig {
+  h5BaseUrl: string
   webviewUrl: string
+  lastModuleId?: string
+  locale: string
+  withDebugParams: boolean
   apiBaseUrl: string
   walletUrl: string
   proxy: { enabled: boolean; url: string }

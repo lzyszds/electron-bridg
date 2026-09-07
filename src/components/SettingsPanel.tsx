@@ -3,6 +3,7 @@ import { useBridgeStore } from '../store/useBridgeStore'
 import { DEVICE_PROFILES } from '../bridge/device-profiles'
 import type { AuthConfig } from '../bridge/types'
 import { cn } from '../lib/utils'
+import { X } from 'lucide-react'
 
 interface FieldProps {
   label: string
@@ -70,7 +71,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             onClick={onClose}
             className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
           >
-            ✕
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
