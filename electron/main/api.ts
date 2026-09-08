@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import pkg from 'node-machine-id'
 const { machineIdSync } = pkg
 import { app } from 'electron'
-import { loadConfig } from './config'
+import { loadConfig, ENV_PRESETS, type EnvMode } from './config'
 import { getProxyAgent } from './proxy'
 
 let cachedMachineId = ''
@@ -28,7 +28,9 @@ const requestSkipToken: AxiosInstance = axios.create({
 
 requestSkipToken.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const appConfig = loadConfig()
-  config.baseURL = appConfig.apiBaseUrl || appConfig.walletUrl
+  if (!config.baseURL) {
+    config.baseURL = appConfig.apiBaseUrl || appConfig.walletUrl
+  }
   config.headers = config.headers ?? {}
   config.headers['operationID'] = uuidv4()
   config.headers['Version'] = 'android-1.0.0'
@@ -73,6 +75,7 @@ export interface LoginParams {
   password: string
   emailCode?: string
   googleCode?: string
+  envMode?: EnvMode
 }
 
 export interface LoginResult {
@@ -93,6 +96,11 @@ export interface LoginResult {
 }
 
 export async function login(params: LoginParams): Promise<LoginResult> {
+  const cfg = loadConfig()
+  const targetEnv = params.envMode || cfg.envMode || 'prod'
+  const preset = ENV_PRESETS[targetEnv] || ENV_PRESETS.prod
+  const targetBaseUrl = preset.apiBaseUrl || preset.walletUrl
+
   const body: Record<string, unknown> = {
     email: params.email ?? '',
     account: params.email ?? '',
@@ -110,11 +118,11 @@ export async function login(params: LoginParams): Promise<LoginResult> {
 
   let response: any
   try {
-    response = await requestSkipToken.post<any>('/account/login', body)
+    response = await requestSkipToken.post<any>('/account/login', body, { baseURL: targetBaseUrl })
   } catch (err: any) {
     if (err?.response?.status === 404) {
-      console.log('[API] /account/login 返回 404，降级尝试 /v1/user/login...')
-      response = await requestSkipToken.post<any>('/v1/user/login', body)
+      console.log(`[API] /account/login 返回 404，降级尝试 /v1/user/login (${targetBaseUrl})...`)
+      response = await requestSkipToken.post<any>('/v1/user/login', body, { baseURL: targetBaseUrl })
     } else {
       throw err
     }

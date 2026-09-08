@@ -8,7 +8,10 @@ export const BRIDGE_CHANNELS = {
   OPEN_EXTERNAL: 'bridge:open-external',
   HTTP_REQUEST: 'bridge:http-request',
   SELECT_FILE: 'bridge:select-file',
-  SAVE_IMAGE: 'bridge:save-image'
+  SAVE_IMAGE: 'bridge:save-image',
+  GET_NODE_CONFIG: 'bridge:get-node-config',
+  WALLET_WS: 'bridge:wallet-ws',
+  WALLET_WS_MESSAGE: 'bridge:wallet-ws-message'
 } as const
 
 /** proxy handler 的请求载荷 */
@@ -27,6 +30,13 @@ export interface SaveImagePayload {
   name?: string
 }
 
+export interface NodeConfigResult {
+  data: {
+    url: string
+    content: string
+  }
+}
+
 /** 通过 contextBridge 暴露给主窗口渲染进程的桥接 API */
 export interface BridgeApi {
   getPreloadPath: () => Promise<string>
@@ -34,6 +44,9 @@ export interface BridgeApi {
   httpRequest: (payload: HttpRequestPayload) => Promise<unknown>
   selectFile: (allowList?: string[]) => Promise<string | null>
   saveImage: (payload: SaveImagePayload) => Promise<void>
+  getNodeConfig: () => Promise<NodeConfigResult>
+  walletWs: (data: unknown) => Promise<unknown>
+  onWalletWsMessage?: (callback: (msg: unknown) => void) => () => void
   toggleDevTools?: () => void
   toggleWebviewDevTools?: () => void
 }

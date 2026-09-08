@@ -308,15 +308,6 @@ export const H5_MODULES: H5Module[] = [
     icon: '💬'
   },
   {
-    id: 'support-iForget',
-    name: '账号/资金密码申诉',
-    category: 'dev',
-    categoryName: '支持调试',
-    path: '/module/iForget',
-    description: '安全申诉与凭证重置找回',
-    icon: '🔑'
-  },
-  {
     id: 'support-banRecord',
     name: '封禁记录公示',
     category: 'dev',
@@ -331,10 +322,46 @@ export const H5_MODULES: H5Module[] = [
  * 常用环境预设
  */
 export const BASE_URL_PRESETS = [
-  { label: '生产环境 (module)', value: 'https://module.qqlink.info' },
-  { label: '测试环境 (test)', value: 'https://test.qqlink.info' },
+  { label: '正式环境 (main 分支)', value: 'https://module.qqlink.info' },
+  { label: '测试环境 (test 分支 SPA)', value: 'https://module.qqlink.buzz' },
   { label: '本地 Nuxt 开发', value: 'http://localhost:3000' }
 ]
+
+export type EnvMode = 'prod' | 'test'
+
+export interface EnvPresetItem {
+  mode: EnvMode
+  label: string
+  shortLabel: string
+  tag: string
+  h5BaseUrl: string
+  walletUrl: string
+  apiBaseUrl: string
+  desc: string
+}
+
+export const ENV_MODES: Record<EnvMode, EnvPresetItem> = {
+  prod: {
+    mode: 'prod',
+    label: '正式环境 (main)',
+    shortLabel: '正式',
+    tag: 'MAIN',
+    h5BaseUrl: 'https://module.qqlink.info',
+    walletUrl: 'https://api.qqlink.live',
+    apiBaseUrl: 'https://chat.qqlink.live/chat',
+    desc: '主分支正式环境，使用原生/H5混合鉴权'
+  },
+  test: {
+    mode: 'test',
+    label: '测试环境 (test)',
+    shortLabel: '测试',
+    tag: 'TEST',
+    h5BaseUrl: 'https://module.qqlink.buzz',
+    walletUrl: 'https://api.qqlink.buzz',
+    apiBaseUrl: 'https://chat.qqlink.buzz/chat',
+    desc: '全新 SPA 架构，全方面接口代理桥接 (Proxy / NodeConfig / Ws)'
+  }
+}
 
 /**
  * 根据基础 URL、路径、语言和调试参数拼接完整访问地址
@@ -365,5 +392,22 @@ export function buildModuleUrl(
     // 降级返回
     const qs = withDebugParams ? '?safeArea=50&vconsole=yes' : ''
     return `${fullUrlStr}${qs}`
+  }
+}
+
+/**
+ * 从完整 URL 中提取模块纯相对路径（剥除 locale 前缀与 query 参数）
+ */
+export function extractModulePath(urlStr: string, locale: string = 'zh-hans'): string {
+  try {
+    const u = new URL(urlStr)
+    let pathname = u.pathname
+    const localePrefix = `/${locale}`
+    if (pathname.startsWith(localePrefix)) {
+      pathname = pathname.substring(localePrefix.length)
+    }
+    return pathname || '/'
+  } catch {
+    return '/'
   }
 }

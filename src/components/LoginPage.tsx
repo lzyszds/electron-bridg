@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react'
 import { Settings } from 'lucide-react'
 import { SettingsDialog, type AppConfig } from './SettingsDialog'
 import SecurityVerifyDialog, { parseEmailFromErrDlt } from './SecurityVerifyDialog'
+import { ENV_MODES, type EnvMode } from '../config/modules'
+import { cn } from '../lib/utils'
 
 interface LoginPageProps {
-  onLoginSuccess: (data: { token: string; userID: string }) => void
+  onLoginSuccess: (data: { token: string; userID: string }, envMode?: EnvMode) => void
+  initialEnvMode?: EnvMode
 }
 
 interface VerifyState {
@@ -12,21 +15,32 @@ interface VerifyState {
   verifiys: string[]
 }
 
-const STORAGE_KEY_ACCOUNT = 'qqlink_last_account'
-const STORAGE_KEY_PASSWORD = 'qqlink_last_password'
-const STORAGE_KEY_REMEMBER = 'qqlink_remember_me'
+const getAccountKey = (mode: string) => `qqlink_last_account_${mode}`
+const getPasswordKey = (mode: string) => `qqlink_last_password_${mode}`
+const getRememberKey = (mode: string) => `qqlink_remember_me_${mode}`
 
-function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  // 从本地存储读取历史账号与密码
+function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
+  const [envMode, setEnvMode] = useState<EnvMode>(() => {
+    return initialEnvMode || (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
+  })
+
+  // 根据当前 envMode 从本地存储读取历史账号与密码
   const [account, setAccount] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY_ACCOUNT) || 'lzyszds@qq.com'
+    const curEnv = initialEnvMode || (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
+    const stored = localStorage.getItem(getAccountKey(curEnv)) || localStorage.getItem('qqlink_last_account')
+    return stored || (curEnv === 'test' ? 'test@qqlink.buzz' : 'lzyszds@qq.com')
   })
+
   const [rememberMe, setRememberMe] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY_REMEMBER) !== 'false'
+    const curEnv = initialEnvMode || (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
+    return localStorage.getItem(getRememberKey(curEnv)) !== 'false'
   })
+
   const [password, setPassword] = useState(() => {
-    const remember = localStorage.getItem(STORAGE_KEY_REMEMBER) !== 'false'
-    return remember ? (localStorage.getItem(STORAGE_KEY_PASSWORD) || 'Aa395878870') : ''
+    const curEnv = initialEnvMode || (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
+    const remember = localStorage.getItem(getRememberKey(curEnv)) !== 'false'
+    const stored = localStorage.getItem(getPasswordKey(curEnv)) || localStorage.getItem('qqlink_last_password')
+    return remember ? (stored || 'Aa395878870') : ''
   })
 
   const [loading, setLoading] = useState(false)
@@ -39,24 +53,49 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [verifySubmitting, setVerifySubmitting] = useState(false)
   const [verifyError, setVerifyError] = useState('')
 
+  // 切换环境时刷新账号与服务器地址
+  const handleSwitchEnv = (mode: EnvMode) => {
+    setEnvMode(mode)
+    setError('')
+    localStorage.setItem('qqlink_env_mode', mode)
+    const preset = ENV_MODES[mode]
+    setApiBaseUrl(preset.apiBaseUrl)
+    setWalletUrl(preset.walletUrl)
+
+    // 读取该环境专属账号密码
+    const storedAccount = localStorage.getItem(getAccountKey(mode))
+    const remember = localStorage.getItem(getRememberKey(mode)) !== 'false'
+    const storedPassword = remember ? (localStorage.getItem(getPasswordKey(mode)) || '') : ''
+
+    setAccount(storedAccount || (mode === 'test' ? '' : 'lzyszds@qq.com'))
+    setRememberMe(remember)
+    setPassword(storedPassword || (mode === 'test' ? '' : 'Aa395878870'))
+  }
+
   useEffect(() => {
-    window.appConfig?.getConfig().then((c: AppConfig) => {
-      if (c) {
-        setApiBaseUrl(c.apiBaseUrl)
-        setWalletUrl(c.walletUrl)
-      }
-    })
-  }, [])
+    if (initialEnvMode) {
+      handleSwitchEnv(initialEnvMode)
+    } else {
+      window.appConfig?.getConfig().then((c: AppConfig) => {
+        if (c) {
+          const mode = c.envMode || envMode
+          handleSwitchEnv(mode)
+        }
+      })
+    }
+  }, [initialEnvMode])
 
   const handleConfigSaved = (cfg: AppConfig) => {
+    if (cfg.envMode) setEnvMode(cfg.envMode)
     setApiBaseUrl(cfg.apiBaseUrl)
     setWalletUrl(cfg.walletUrl)
   }
 
   const callLogin = async (extra?: { emailCode?: string; googleCode?: string }) => {
-    const params: { email: string; password: string; emailCode?: string; googleCode?: string } = {
+    const params: { email: string; password: string; emailCode?: string; googleCode?: string; envMode: string } = {
       email: account,
-      password
+      password,
+      envMode
     }
     if (extra?.emailCode) params.emailCode = extra.emailCode
     if (extra?.googleCode) params.googleCode = extra.googleCode
@@ -65,15 +104,16 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   const handleLoginSuccess = (result: { success: boolean; data?: { token: string; userID: string } }): boolean => {
     if (result.success && result.data) {
-      // 本地存储账号与记住密码
+      // 本地存储专属环境的账号与记住密码
       try {
-        localStorage.setItem(STORAGE_KEY_ACCOUNT, account)
-        localStorage.setItem(STORAGE_KEY_REMEMBER, String(rememberMe))
+        localStorage.setItem(getAccountKey(envMode), account)
+        localStorage.setItem(getRememberKey(envMode), String(rememberMe))
         if (rememberMe) {
-          localStorage.setItem(STORAGE_KEY_PASSWORD, password)
+          localStorage.setItem(getPasswordKey(envMode), password)
         } else {
-          localStorage.removeItem(STORAGE_KEY_PASSWORD)
+          localStorage.removeItem(getPasswordKey(envMode))
         }
+        localStorage.setItem('qqlink_env_mode', envMode)
       } catch (e) {
         console.warn('[LoginPage] 本地存储写入失败:', e)
       }
@@ -81,7 +121,7 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
       onLoginSuccess({
         token: result.data.token,
         userID: result.data.userID
-      })
+      }, envMode)
       return true
     }
     return false
@@ -196,6 +236,36 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         {/* 表单 */}
         <form onSubmit={handleSubmit} className="space-y-4 p-8 pt-2">
+          {/* 登录目标环境模式选择 */}
+          <div className="flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200/80 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => handleSwitchEnv('prod')}
+              className={cn(
+                'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                envMode === 'prod'
+                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs border border-blue-200/80 font-bold'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              )}
+            >
+              <span className={cn('w-1.5 h-1.5 rounded-full', envMode === 'prod' ? 'bg-blue-500' : 'bg-slate-300')} />
+              <span>🚀 正式环境 (main)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchEnv('test')}
+              className={cn(
+                'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                envMode === 'test'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs border border-purple-200/80 font-bold'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              )}
+            >
+              <span className={cn('w-1.5 h-1.5 rounded-full', envMode === 'test' ? 'bg-purple-500' : 'bg-slate-300')} />
+              <span>🧪 测试环境 (test)</span>
+            </button>
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               电子邮箱

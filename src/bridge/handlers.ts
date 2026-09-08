@@ -248,20 +248,27 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
   mock('refreshWalletCard')
   mock('settings')
 
-  // HTTP 代理：主进程转发（无 CORS）
-  bridge.registerHandler('proxy', async (data) => {
-    log('[proxy]', data)
-    const obj = (data ?? {}) as {
+  // HTTP 代理：主进程转发（模拟 Flutter JsBridgeProxy 代发，含自动鉴权与签名）
+  bridge.registerHandler('proxy', async (rawPayload) => {
+    // 兼容 payload 与 payload.data 嵌套格式
+    const payload =
+      rawPayload && typeof rawPayload === 'object' && 'data' in (rawPayload as any)
+        ? (rawPayload as any).data
+        : rawPayload
+
+    const obj = (payload ?? {}) as {
       url?: unknown
       method?: unknown
       params?: Record<string, unknown>
       header?: Record<string, string>
       body?: unknown
     }
-    if (typeof obj.url !== 'string' || typeof obj.method !== 'string') return null
+    if (typeof obj.url !== 'string' || !obj.url) return null
+    const method = typeof obj.method === 'string' ? obj.method : 'POST'
+
     const res = (await window.bridge.httpRequest({
       url: obj.url,
-      method: obj.method,
+      method,
       params: obj.params,
       header: obj.header,
       body: obj.body
@@ -273,8 +280,31 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
       deps.onAuthExpired?.(authErr)
     }
 
+    log(`[proxy] ← ${method.toUpperCase()} ${obj.url} [HTTP ${res?.status}]`, res?.data)
     return res?.data
   })
+
+  // 节点配置获取：还原 Flutter JsBridgeNodeConfig.fetch()
+  bridge.registerHandler('getNodeConfig', async (data) => {
+    log('[getNodeConfig] 获取当前环境节点配置', data)
+    const result = await window.bridge.getNodeConfig()
+    log('[getNodeConfig] 结果:', result)
+    return result
+  })
+
+  // 钱包 WebSocket 桥接：还原 Flutter JsBridgeWalletWs
+  bridge.registerHandler('walletWs', async (data) => {
+    log('[walletWs] 发送 WS 指令/消息', data)
+    return await window.bridge.walletWs(data)
+  })
+
+  // 监听来自主进程的 WS 推送，并回调 H5 的 onWalletMessage
+  if (window.bridge?.onWalletWsMessage) {
+    window.bridge.onWalletWsMessage((msg) => {
+      log('[walletWs] 收到服务端推送 -> onWalletMessage', msg)
+      void bridge.callHandler('onWalletMessage', msg)
+    })
+  }
 
   // 网页端请求去登录/重新登录
   bridge.registerHandler('toLogin', async (data) => {

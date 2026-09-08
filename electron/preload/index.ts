@@ -14,6 +14,7 @@ interface LoginParams {
   password: string
   emailCode?: string
   googleCode?: string
+  envMode?: string
 }
 
 interface LoginResult {
@@ -49,6 +50,7 @@ interface AuthTokens {
 }
 
 interface AppConfig {
+  envMode?: 'prod' | 'test'
   h5BaseUrl: string
   webviewUrl: string
   lastModuleId?: string
@@ -103,6 +105,20 @@ const bridgeApi: BridgeApi = {
   saveImage: (payload: SaveImagePayload): Promise<void> =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.SAVE_IMAGE, payload),
 
+  getNodeConfig: () =>
+    ipcRenderer.invoke(BRIDGE_CHANNELS.GET_NODE_CONFIG),
+
+  walletWs: (data: unknown) =>
+    ipcRenderer.invoke(BRIDGE_CHANNELS.WALLET_WS, data),
+
+  onWalletWsMessage: (callback: (msg: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, msg: unknown) => callback(msg)
+    ipcRenderer.on(BRIDGE_CHANNELS.WALLET_WS_MESSAGE, listener)
+    return () => {
+      ipcRenderer.removeListener(BRIDGE_CHANNELS.WALLET_WS_MESSAGE, listener)
+    }
+  },
+
   toggleDevTools: (): void => {
     ipcRenderer.send('devtools:toggleMain')
   },
@@ -121,23 +137,23 @@ const authApi = {
   sendEmailCode: (params: { email: string; codeType: number }): Promise<{ success: boolean; errMsg?: string }> =>
     ipcRenderer.invoke('auth:sendEmailCode', params),
 
-  getToken: (): Promise<string> =>
-    ipcRenderer.invoke('auth:getToken'),
+  getToken: (env?: string): Promise<string> =>
+    ipcRenderer.invoke('auth:getToken', env),
 
-  isLoggedIn: (): Promise<boolean> =>
-    ipcRenderer.invoke('auth:isLoggedIn'),
+  isLoggedIn: (env?: string): Promise<boolean> =>
+    ipcRenderer.invoke('auth:isLoggedIn', env),
 
-  getAuthInfo: (): Promise<AuthInfo> =>
-    ipcRenderer.invoke('auth:getInfo'),
+  getAuthInfo: (env?: string): Promise<AuthInfo> =>
+    ipcRenderer.invoke('auth:getInfo', env),
 
-  getAuthTokens: (): Promise<AuthTokens> =>
-    ipcRenderer.invoke('auth:getTokens'),
+  getAuthTokens: (env?: string): Promise<AuthTokens> =>
+    ipcRenderer.invoke('auth:getTokens', env),
 
-  getUserID: (): Promise<string> =>
-    ipcRenderer.invoke('auth:getUserID'),
+  getUserID: (env?: string): Promise<string> =>
+    ipcRenderer.invoke('auth:getUserID', env),
 
-  logout: (): void => {
-    ipcRenderer.send('auth:logout')
+  logout: (env?: string): void => {
+    ipcRenderer.send('auth:logout', env)
   }
 }
 

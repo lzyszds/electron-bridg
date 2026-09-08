@@ -1,4 +1,4 @@
-import { createCipheriv, publicEncrypt, randomBytes, constants } from 'node:crypto'
+import { createCipheriv, publicEncrypt, randomBytes, constants, createHmac } from 'node:crypto'
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import { app } from 'electron'
@@ -9,7 +9,7 @@ import { getProxyAgent } from './proxy'
 let cachedPubKey: string | null = null
 let pubKeyPromise: Promise<string> | null = null
 
-function encryptRequestData(data: Record<string, unknown>, publicKeyPem: string) {
+export function encryptRequestData(data: Record<string, unknown>, publicKeyPem: string) {
   const aesKey = randomBytes(32)
   const iv = aesKey.subarray(0, 16)
   const cipher = createCipheriv('aes-256-cbc', aesKey, iv)
@@ -29,7 +29,7 @@ function encryptRequestData(data: Record<string, unknown>, publicKeyPem: string)
   }
 }
 
-async function fetchPubKey(walletUrl: string): Promise<string> {
+export async function fetchPubKey(walletUrl: string): Promise<string> {
   if (cachedPubKey) return cachedPubKey
   if (pubKeyPromise) return pubKeyPromise
   pubKeyPromise = axios
@@ -49,6 +49,53 @@ async function fetchPubKey(walletUrl: string): Promise<string> {
       pubKeyPromise = null
     })
   return pubKeyPromise
+}
+
+/** 从 wallet JWT 解析 userSecret（后端 HMAC 验签用的密钥） */
+export function getWalletSignSecret(walletToken?: string, secretKey?: string): string {
+  if (walletToken) {
+    const parts = walletToken.split('.')
+    if (parts.length >= 2) {
+      try {
+        let payload = parts[1]
+        const mod = payload.length % 4
+        if (mod > 0) payload += '='.repeat(4 - mod)
+        payload = payload.replace(/-/g, '+').replace(/_/g, '/')
+        const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'))
+        const secret = decoded.userSecret || decoded.user_secret
+        if (secret) return String(secret)
+      } catch {
+        // 忽略
+      }
+    }
+  }
+  return secretKey || ''
+}
+
+/** 对齐 Flutter 端 WalletDio 签名算法 */
+export function generateWalletSignature(params: {
+  data?: unknown
+  secret: string
+}): { timestamp: number; nonce: string; signature: string } {
+  const now = Math.floor(Date.now() / 1000)
+  const nonce = uuidv4()
+  let buffer = ''
+
+  if (params.data && typeof params.data === 'object') {
+    const obj = params.data as Record<string, unknown>
+    const keys = Object.keys(obj).sort()
+    buffer = keys.map((k) => `${obj[k]}`).join('&')
+    if (buffer.length > 0) buffer += '&'
+  }
+
+  buffer += `${now}&${nonce}`
+  const signature = createHmac('sha256', params.secret || '').update(buffer).digest('hex')
+
+  return {
+    timestamp: now,
+    nonce,
+    signature
+  }
 }
 
 const walletRequest: AxiosInstance = axios.create({

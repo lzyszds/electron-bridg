@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { loadConfig, type EnvMode } from './config'
 
 interface AuthStore {
   token: string
@@ -35,45 +36,64 @@ export interface AuthTokenPayload {
   chatToken: string
 }
 
-function getStorePath(): string {
+function resolveEnv(env?: EnvMode): EnvMode {
+  return env || loadConfig().envMode || 'prod'
+}
+
+function getStorePath(env?: EnvMode): string {
+  const currentEnv = resolveEnv(env)
   const dir = join(app.getPath('userData'), 'auth')
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
-  return join(dir, 'auth.json')
+  const envPath = join(dir, `auth_${currentEnv}.json`)
+  const legacyPath = join(dir, 'auth.json')
+
+  // 兼容迁移：如果是正式环境且 auth_prod.json 尚不存在，但存在旧的 auth.json，则自动迁移
+  if (currentEnv === 'prod' && !existsSync(envPath) && existsSync(legacyPath)) {
+    try {
+      const oldData = readFileSync(legacyPath, 'utf-8')
+      writeFileSync(envPath, oldData, 'utf-8')
+    } catch {}
+  }
+
+  return envPath
 }
 
-function loadStore(): AuthStore {
+function loadStore(env?: EnvMode): AuthStore {
   try {
-    const path = getStorePath()
+    const path = getStorePath(env)
     if (existsSync(path)) {
       return { ...defaults, ...JSON.parse(readFileSync(path, 'utf-8')) }
     }
   } catch (e) {
-    console.error('[Auth] 读取存储失败:', e)
+    console.error(`[Auth] 读取存储失败 (${resolveEnv(env)}):`, e)
   }
   return { ...defaults }
 }
 
-function saveStore(data: AuthStore): void {
+function saveStore(data: AuthStore, env?: EnvMode): void {
   try {
-    writeFileSync(getStorePath(), JSON.stringify(data, null, 2), 'utf-8')
+    writeFileSync(getStorePath(env), JSON.stringify(data, null, 2), 'utf-8')
   } catch (e) {
-    console.error('[Auth] 写入存储失败:', e)
+    console.error(`[Auth] 写入存储失败 (${resolveEnv(env)}):`, e)
   }
 }
 
-export function saveToken(data: {
-  token: string
-  refreshToken: string
-  expireTime: number
-  userID: string
-  walletToken?: string
-  secretKey?: string
-  kbitToken?: string
-  chatToken?: string
-}) {
-  const store = loadStore()
+export function saveToken(
+  data: {
+    token: string
+    refreshToken: string
+    expireTime: number
+    userID: string
+    walletToken?: string
+    secretKey?: string
+    kbitToken?: string
+    chatToken?: string
+  },
+  env?: EnvMode
+) {
+  const store = loadStore(env)
   store.token = data.token
   store.refreshToken = data.refreshToken
   const nowSec = Math.floor(Date.now() / 1000)
@@ -85,11 +105,11 @@ export function saveToken(data: {
   store.secretKey = data.secretKey ?? ''
   store.kbitToken = data.kbitToken ?? ''
   store.chatToken = data.chatToken ?? data.token ?? ''
-  saveStore(store)
+  saveStore(store, env)
 }
 
-export function getAuthTokens(): AuthTokenPayload {
-  const store = loadStore()
+export function getAuthTokens(env?: EnvMode): AuthTokenPayload {
+  const store = loadStore(env)
   return {
     token: store.walletToken || store.token,
     secretKey: store.secretKey,
@@ -98,25 +118,25 @@ export function getAuthTokens(): AuthTokenPayload {
   }
 }
 
-export function getToken(): string {
-  const store = loadStore()
+export function getToken(env?: EnvMode): string {
+  const store = loadStore(env)
   return store.token || store.chatToken || store.walletToken
 }
 
-export function getUserID(): string {
-  return loadStore().userID
+export function getUserID(env?: EnvMode): string {
+  return loadStore(env).userID
 }
 
-export function isTokenValid(): boolean {
-  const store = loadStore()
+export function isTokenValid(env?: EnvMode): boolean {
+  const store = loadStore(env)
   // 只要本地存储着 token，直接允许进入页面，过期或错误由运行时请求时捕获强制退出
   return !!(store.token || store.chatToken || store.walletToken)
 }
 
-export function clearToken() {
-  saveStore({ ...defaults })
+export function clearToken(env?: EnvMode) {
+  saveStore({ ...defaults }, env)
 }
 
-export function getAuthInfo(): AuthStore {
-  return loadStore()
+export function getAuthInfo(env?: EnvMode): AuthStore {
+  return loadStore(env)
 }

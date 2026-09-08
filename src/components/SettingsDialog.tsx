@@ -7,6 +7,7 @@ import { cn } from '../lib/utils'
 import { Settings, Globe, Server, ShieldCheck, X } from 'lucide-react'
 
 export interface AppConfig {
+  envMode?: 'prod' | 'test'
   h5BaseUrl: string
   webviewUrl: string
   lastModuleId?: string
@@ -39,13 +40,14 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     if (!open) return
     window.appConfig?.getConfig().then((c) => {
       setCfg({
+        envMode: c.envMode || 'prod',
         h5BaseUrl: c.h5BaseUrl || 'https://module.qqlink.info',
         webviewUrl: c.webviewUrl || 'https://module.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
         lastModuleId: c.lastModuleId || 'financial-usStocks',
         locale: c.locale || 'zh-hans',
         withDebugParams: c.withDebugParams ?? true,
         apiBaseUrl: c.apiBaseUrl || 'https://chat.qqlink.live/chat',
-        walletUrl: c.walletUrl || 'https://api.wallet8.top',
+        walletUrl: c.walletUrl || 'https://api.qqlink.live',
         proxy: c.proxy || { enabled: true, url: 'http://127.0.0.1:7890' }
       })
     })
@@ -107,13 +109,14 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
   const handleResetDefaults = async () => {
     if (!confirm('确定要恢复默认设置吗？')) return
     const defaultCfg: AppConfig = {
+      envMode: 'prod',
       h5BaseUrl: 'https://module.qqlink.info',
       webviewUrl: 'https://module.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
       lastModuleId: 'financial-usStocks',
       locale: 'zh-hans',
       withDebugParams: true,
       apiBaseUrl: 'https://chat.qqlink.live/chat',
-      walletUrl: 'https://api.wallet8.top',
+      walletUrl: 'https://api.qqlink.live',
       proxy: {
         enabled: true,
         url: 'http://127.0.0.1:7890'
@@ -208,6 +211,82 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {activeTab === 'h5' && (
             <div className="space-y-4">
+              {/* 运行模式选择 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  运行模式切换 (环境与通信架构)
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    onClick={() => {
+                      const nextBase = 'https://module.qqlink.info'
+                      const selectedMod = H5_MODULES.find((m) => m.id === cfg.lastModuleId) || H5_MODULES[0]
+                      const nextUrl = buildModuleUrl(nextBase, selectedMod.path, cfg.locale, cfg.withDebugParams)
+                      setCfg({
+                        ...cfg,
+                        envMode: 'prod',
+                        h5BaseUrl: nextBase,
+                        walletUrl: 'https://api.qqlink.live',
+                        apiBaseUrl: 'https://chat.qqlink.live/chat',
+                        webviewUrl: nextUrl
+                      })
+                    }}
+                    className={cn(
+                      'p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1',
+                      cfg.envMode === 'prod' || !cfg.envMode
+                        ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 text-blue-900 dark:text-blue-200 shadow-xs'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <span>🚀 正式环境 (main)</span>
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                        .info
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                      https://module.qqlink.info
+                    </span>
+                  </div>
+
+                  <div
+                    onClick={() => {
+                      const nextBase = 'https://module.qqlink.buzz'
+                      const selectedMod = H5_MODULES.find((m) => m.id === cfg.lastModuleId) || H5_MODULES[0]
+                      const nextUrl = buildModuleUrl(nextBase, selectedMod.path, cfg.locale, cfg.withDebugParams)
+                      setCfg({
+                        ...cfg,
+                        envMode: 'test',
+                        h5BaseUrl: nextBase,
+                        walletUrl: 'https://api.qqlink.buzz',
+                        apiBaseUrl: 'https://chat.qqlink.buzz/chat',
+                        webviewUrl: nextUrl
+                      })
+                    }}
+                    className={cn(
+                      'p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1',
+                      cfg.envMode === 'test'
+                        ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-200 shadow-xs'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <span>🧪 测试环境 (test SPA)</span>
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300">
+                        .buzz
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                      https://module.qqlink.buzz (全桥接)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* 基础域名 */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">

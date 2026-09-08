@@ -8,7 +8,15 @@ import { registerHandlers } from './bridge/handlers'
 import { webviewBridgeSdk, webviewPolyfills } from './bridge/sdk'
 import { LogPanel } from './components/LogPanel'
 import { SettingsDialog, type AppConfig } from './components/SettingsDialog'
-import { H5_MODULES, MODULE_CATEGORIES, buildModuleUrl, type H5Module } from './config/modules'
+import {
+  H5_MODULES,
+  MODULE_CATEGORIES,
+  buildModuleUrl,
+  extractModulePath,
+  ENV_MODES,
+  type H5Module,
+  type EnvMode
+} from './config/modules'
 import { ModuleIcon } from './components/ModuleIcon'
 import {
   Select,
@@ -20,6 +28,7 @@ import {
   SelectTrigger
 } from './components/ui/select'
 import LoginPage from './components/LoginPage'
+import { EnvSwitchConfirmDialog } from './components/EnvSwitchConfirmDialog'
 import {
   Zap,
   ArrowLeft,
@@ -59,6 +68,7 @@ function App() {
   const [bridgeReady, setBridgeReady] = useState(false)
 
   // 模块切换与环境记忆状态
+  const [envMode, setEnvMode] = useState<EnvMode>('prod')
   const [currentModuleId, setCurrentModuleId] = useState<string>('financial-usStocks')
   const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('https://module.qqlink.info')
   const [locale, setLocale] = useState<string>('zh-hans')
@@ -83,10 +93,11 @@ function App() {
 
   // ===== 同步 Token 并恢复上次访问的模块与路径 =====
   const syncTokensAndEnterMain = useCallback(
-    async (uid: string) => {
+    async (uid: string, curEnv?: EnvMode) => {
+      const mode = curEnv || envMode
       setUserID(uid)
       try {
-        const tokens = await window.auth.getAuthTokens()
+        const tokens = await window.auth.getAuthTokens(mode)
         useBridgeStore.getState().setAuth('token', tokens.token)
         useBridgeStore.getState().setAuth('secretKey', tokens.secretKey)
         useBridgeStore.getState().setAuth('imToken', tokens.kbitToken)
@@ -95,13 +106,14 @@ function App() {
         addLog({
           source: 'system',
           level: 'system',
-          message: `已载入本地 Token 并注入桥接配置 (userID: ${uid})`
+          message: `已载入【${ENV_MODES[mode].label}】账号凭据 (userID: ${uid})`
         })
       } catch (e) {
         console.warn('[App] 注入 token 异常:', e)
       }
 
-      let targetBase = 'https://module.qqlink.info'
+      let targetEnv: EnvMode = mode
+      let targetBase = ENV_MODES[mode].h5BaseUrl
       let targetLocale = 'zh-hans'
       let targetDebug = true
       let targetModId = 'financial-usStocks'
@@ -109,7 +121,6 @@ function App() {
 
       try {
         const cfg = await window.appConfig.getConfig()
-        if (cfg.h5BaseUrl) targetBase = cfg.h5BaseUrl
         if (cfg.locale) targetLocale = cfg.locale
         if (cfg.withDebugParams !== undefined) targetDebug = cfg.withDebugParams
         if (cfg.lastModuleId) targetModId = cfg.lastModuleId
@@ -118,12 +129,12 @@ function App() {
         // 忽略
       }
 
-      // 优先取本地存储的上次访问记录
       const localLastUrl = localStorage.getItem('qqlink_last_visited_url')
       const localLastMod = localStorage.getItem('qqlink_last_module_id')
       if (localLastUrl) targetUrl = localLastUrl
       if (localLastMod) targetModId = localLastMod
 
+      setEnvMode(targetEnv)
       setCurrentBaseUrl(targetBase)
       setLocale(targetLocale)
       setWithDebugParams(targetDebug)
@@ -139,8 +150,56 @@ function App() {
       setInputUrl(targetUrl)
       setPageState('main')
     },
-    [addLog]
+    [envMode, addLog]
   )
+
+  // 待切换的目标环境模式（非 null 时唤起二次确认提醒弹窗）
+  const [pendingEnvMode, setPendingEnvMode] = useState<EnvMode | null>(null)
+
+  // ===== 用户请求切换环境模式：唤起二次确认弹窗 =====
+  const handleRequestSwitchEnvMode = useCallback(
+    (newMode: EnvMode) => {
+      if (newMode === envMode) return
+      setPendingEnvMode(newMode)
+    },
+    [envMode]
+  )
+
+  // ===== 二次确认提醒后：确认切换环境并强制退回登录页 =====
+  const handleConfirmSwitchEnvMode = useCallback(async () => {
+    if (!pendingEnvMode) return
+    const targetMode = pendingEnvMode
+    setPendingEnvMode(null)
+
+    const preset = ENV_MODES[targetMode]
+    setEnvMode(targetMode)
+    setCurrentBaseUrl(preset.h5BaseUrl)
+    localStorage.setItem('qqlink_env_mode', targetMode)
+
+    // 1. 同步更新主进程环境配置（BaseURL、接口地址与安全拦截白名单）
+    try {
+      await window.appConfig?.setConfig({
+        envMode: targetMode,
+        h5BaseUrl: preset.h5BaseUrl,
+        walletUrl: preset.walletUrl,
+        apiBaseUrl: preset.apiBaseUrl
+      })
+    } catch {
+      // 忽略
+    }
+
+    // 2. 清理当前内存中的鉴权凭证
+    useBridgeStore.getState().clearAuth()
+
+    addLog({
+      source: 'system',
+      level: 'system',
+      message: `已切换至【${preset.label}】。因两个环境账号体系独立不互通，已强制退出至登录页，请登录该环境账号。`
+    })
+
+    // 3. 强制退回登录页
+    setPageState('login')
+  }, [pendingEnvMode, addLog])
 
   // ===== 启动时检查本地是否存储着有效 Token =====
   useEffect(() => {
@@ -151,10 +210,12 @@ function App() {
         return
       }
       try {
-        const loggedIn = await auth.isLoggedIn()
+        const curEnv = (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
+        setEnvMode(curEnv)
+        const loggedIn = await auth.isLoggedIn(curEnv)
         if (loggedIn) {
-          const info = await auth.getAuthInfo()
-          await syncTokensAndEnterMain(info.userID)
+          const info = await auth.getAuthInfo(curEnv)
+          await syncTokensAndEnterMain(info.userID, curEnv)
         } else {
           setPageState('login')
         }
@@ -173,13 +234,15 @@ function App() {
   }, [])
 
   // ===== 登录成功后进入主界面 =====
-  const handleLoginSuccess = async (data: { token: string; userID: string }) => {
-    await syncTokensAndEnterMain(data.userID)
+  const handleLoginSuccess = async (data: { token: string; userID: string }, fromEnv?: EnvMode) => {
+    const curEnv = fromEnv || envMode
+    setEnvMode(curEnv)
+    await syncTokensAndEnterMain(data.userID, curEnv)
   }
 
   // ===== 退出登录 =====
   const handleLogout = useCallback(() => {
-    window.auth?.logout()
+    window.auth?.logout(envMode)
     useBridgeStore.getState().setAuth('token', '')
     useBridgeStore.getState().setAuth('secretKey', '')
     useBridgeStore.getState().setAuth('imToken', '')
@@ -189,7 +252,7 @@ function App() {
     setUrl('')
     setInputUrl('')
     setPageState('login')
-  }, [])
+  }, [envMode])
 
   // ===== Token 错误/过期强制退出登录 =====
   const handleAuthExpired = useCallback(
@@ -393,6 +456,18 @@ function App() {
 
   // ===== 设置保存后的回调 =====
   const handleSettingsSaved = (saved: AppConfig) => {
+    if (saved.envMode && saved.envMode !== envMode) {
+      setEnvMode(saved.envMode)
+      useBridgeStore.getState().clearAuth()
+      setPageState('login')
+      addLog({
+        source: 'system',
+        level: 'system',
+        message: `在设置中更改了运行模式为【${ENV_MODES[saved.envMode]?.label || saved.envMode}】。账号不通用，已强制退回登录页。`
+      })
+      return
+    }
+    if (saved.envMode) setEnvMode(saved.envMode)
     if (saved.h5BaseUrl) setCurrentBaseUrl(saved.h5BaseUrl)
     if (saved.locale) setLocale(saved.locale)
     if (saved.withDebugParams !== undefined) setWithDebugParams(saved.withDebugParams)
@@ -419,7 +494,7 @@ function App() {
 
   // ===== login 状态：登录页 =====
   if (pageState === 'login') {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />
+    return <LoginPage onLoginSuccess={handleLoginSuccess} initialEnvMode={envMode} />
   }
 
   // 获取当前选中的模块对象
@@ -442,8 +517,15 @@ function App() {
               <span className="text-xs font-bold tracking-tight text-slate-900">
                 QQLink Studio
               </span>
-              <span className="text-[9px] font-mono font-semibold px-1 py-0.2 rounded bg-blue-50 text-blue-600 border border-blue-200">
-                H5
+              <span
+                className={cn(
+                  'text-[9px] font-mono font-semibold px-1 py-0.2 rounded border transition-colors',
+                  envMode === 'test'
+                    ? 'bg-purple-50 text-purple-600 border-purple-200'
+                    : 'bg-blue-50 text-blue-600 border-blue-200'
+                )}
+              >
+                {envMode === 'test' ? 'TEST (test)' : 'MAIN (info)'}
               </span>
             </div>
           </div>
@@ -466,6 +548,51 @@ function App() {
             />
             <span>{bridgeReady ? 'Ready' : 'Connecting'}</span>
           </div>
+        </div>
+
+        {/* 垂直分割线 */}
+        <div className="h-4 w-px bg-slate-200 shrink-0" />
+
+        {/* 双模式切换胶囊开关 (正式环境 main vs 测试环境 test SPA 全桥接) */}
+        <div className="flex items-center rounded-lg bg-slate-100/90 p-0.5 border border-slate-200 shrink-0">
+          <button
+            type="button"
+            onClick={() => handleRequestSwitchEnvMode('prod')}
+            className={cn(
+              'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
+              envMode === 'prod'
+                ? 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            )}
+            title="正式环境 (main 分支项目: https://module.qqlink.info)"
+          >
+            <span
+              className={cn(
+                'w-1.5 h-1.5 rounded-full',
+                envMode === 'prod' ? 'bg-blue-500' : 'bg-slate-300'
+              )}
+            />
+            <span>正式 (main)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRequestSwitchEnvMode('test')}
+            className={cn(
+              'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
+              envMode === 'test'
+                ? 'bg-white text-purple-600 shadow-xs border border-purple-200 font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            )}
+            title="测试环境 (test 分支 SPA 全桥接: https://module.qqlink.buzz)"
+          >
+            <span
+              className={cn(
+                'w-1.5 h-1.5 rounded-full',
+                envMode === 'test' ? 'bg-purple-500' : 'bg-slate-300'
+              )}
+            />
+            <span>测试 (test)</span>
+          </button>
         </div>
 
         {/* 垂直分割线 */}
@@ -867,6 +994,15 @@ function App() {
           onSaved={handleSettingsSaved}
         />
       )}
+
+      {/* 环境切换二次确认提醒弹窗 */}
+      <EnvSwitchConfirmDialog
+        open={!!pendingEnvMode}
+        currentEnv={envMode}
+        targetEnv={pendingEnvMode || (envMode === 'prod' ? 'test' : 'prod')}
+        onConfirm={handleConfirmSwitchEnvMode}
+        onClose={() => setPendingEnvMode(null)}
+      />
     </div>
   )
 }
