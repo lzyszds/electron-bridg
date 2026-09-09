@@ -254,19 +254,17 @@ function App() {
     setPageState('login')
   }, [envMode])
 
-  // ===== Token 错误/过期强制退出登录 =====
+  // ===== Token 错误/过期提示（避免误报级联退登清空用户凭证） =====
   const handleAuthExpired = useCallback(
     (reason?: string) => {
-      console.warn('[App] 登录已失效或过期:', reason)
+      console.warn('[App] 登录凭据警告:', reason)
       addLog({
         source: 'system',
         level: 'warn',
-        message: `Token 失效或已过期，强制退出登录: ${reason || '请重新登录'}`
+        message: `Token 异常提示: ${reason || '部分接口鉴权失败'}`
       })
-      handleLogout()
-      alert(reason ? `登录失效 (${reason})，请重新登录` : '登录已过期或 Token 失效，请重新登录')
     },
-    [addLog, handleLogout]
+    [addLog]
   )
 
   // ===== 切换选中的 H5 模块并持久化记忆 =====
@@ -317,8 +315,9 @@ function App() {
     localStorage.setItem('qqlink_last_visited_url', finalUrl)
     window.appConfig?.setConfig({ webviewUrl: finalUrl }).catch(() => {})
 
-    // 匹配并同步左侧选中的模块
-    for (const mod of H5_MODULES) {
+    // 匹配并同步选中的模块（按路径长度降序优先匹配更深层级的具体路由）
+    const sortedModules = [...H5_MODULES].sort((a, b) => b.path.length - a.path.length)
+    for (const mod of sortedModules) {
       if (finalUrl.includes(mod.path)) {
         setCurrentModuleId(mod.id)
         localStorage.setItem('qqlink_last_module_id', mod.id)
@@ -369,6 +368,15 @@ function App() {
       getConfig: () => useBridgeStore.getState(),
       log: (message, detail) =>
         addLog({ source: 'system', level: 'system', message, detail }),
+      logWire: (entry) =>
+        addLog({
+          source: 'electron',
+          level: entry.level || 'info',
+          action: entry.action,
+          message: entry.message,
+          detail: entry.detail,
+          wire: entry.wire
+        }),
       onAuthExpired: handleAuthExpired
     })
 
@@ -420,8 +428,9 @@ function App() {
       localStorage.setItem('qqlink_last_visited_url', currentUrl)
       window.appConfig?.setConfig({ webviewUrl: currentUrl }).catch(() => {})
 
-      // 自动高亮识别当前匹配的模块
-      for (const mod of H5_MODULES) {
+      // 自动高亮识别当前匹配的模块（按路径长度降序优先匹配更深层级的具体路由）
+      const sortedModules = [...H5_MODULES].sort((a, b) => b.path.length - a.path.length)
+      for (const mod of sortedModules) {
         if (currentUrl.includes(mod.path)) {
           setCurrentModuleId(mod.id)
           localStorage.setItem('qqlink_last_module_id', mod.id)

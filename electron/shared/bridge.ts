@@ -37,11 +37,26 @@ export interface NodeConfigResult {
   }
 }
 
+export interface HttpResponseResult {
+  status: number
+  statusText?: string
+  data: unknown
+  headers?: Record<string, string>
+  timeMs?: number
+  sizeBytes?: number
+  requestInfo?: {
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: unknown
+  }
+}
+
 /** 通过 contextBridge 暴露给主窗口渲染进程的桥接 API */
 export interface BridgeApi {
   getPreloadPath: () => Promise<string>
   openExternal: (url: string) => Promise<void>
-  httpRequest: (payload: HttpRequestPayload) => Promise<unknown>
+  httpRequest: (payload: HttpRequestPayload) => Promise<HttpResponseResult>
   selectFile: (allowList?: string[]) => Promise<string | null>
   saveImage: (payload: SaveImagePayload) => Promise<void>
   getNodeConfig: () => Promise<NodeConfigResult>

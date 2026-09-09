@@ -12,6 +12,7 @@ interface LogState {
     detail?: unknown
     direction?: 'in' | 'out'
     action?: string
+    wire?: ElectronWirePayload
   }) => void
   clearLogs: () => void
 }
@@ -34,7 +35,8 @@ export const useLogStore = create<LogState>((set) => ({
         message: entry.message,
         detail: entry.detail,
         direction: entry.direction,
-        action: entry.action
+        action: entry.action,
+        wire: entry.wire
       }
       const logs = [...state.logs, next]
       if (logs.length > MAX_LOGS) {

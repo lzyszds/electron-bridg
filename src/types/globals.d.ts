@@ -1,21 +1,20 @@
-/** 主进程暴露的认证 API */
 interface AuthApi {
   login: (params: {
     email?: string
     password: string
     emailCode?: string
     googleCode?: string
-  }) => Promise<{
+  }, env?: string) => Promise<{
     success: boolean
     data?: { token: string; refreshToken: string; expireTime: number; userID: string }
     errMsg?: string
     errCode?: number
     errDlt?: string
   }>
-  sendEmailCode: (params: { email: string; codeType: number }) => Promise<{ success: boolean; errMsg?: string }>
-  getToken: () => Promise<string>
-  isLoggedIn: () => Promise<boolean>
-  getAuthInfo: () => Promise<{
+  sendEmailCode: (params: { email: string; codeType: number }, env?: string) => Promise<{ success: boolean; errMsg?: string }>
+  getToken: (env?: string) => Promise<string>
+  isLoggedIn: (env?: string) => Promise<boolean>
+  getAuthInfo: (env?: string) => Promise<{
     token: string
     refreshToken: string
     expireTime: number
@@ -26,14 +25,14 @@ interface AuthApi {
     kbitToken: string
     chatToken: string
   }>
-  getAuthTokens: () => Promise<{
+  getAuthTokens: (env?: string) => Promise<{
     token: string
     secretKey: string
     kbitToken: string
     chatToken: string
   }>
-  getUserID: () => Promise<string>
-  logout: () => void
+  getUserID: (env?: string) => Promise<string>
+  logout: (env?: string) => void
 }
 
 /** 主进程暴露的配置 API */
@@ -44,6 +43,7 @@ interface ConfigApi {
 }
 
 interface AppConfig {
+  envMode?: 'prod' | 'test'
   webviewUrl: string
   apiBaseUrl: string
   walletUrl: string

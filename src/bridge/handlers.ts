@@ -1,7 +1,8 @@
 import type { WebviewTag } from 'electron'
 import { JsBridge } from './jsbridge'
-import { DEFAULT_PUB_KEY, type BridgeConfig } from './types'
+import { DEFAULT_PUB_KEY, type BridgeConfig, type ElectronWirePayload, type LogLevel } from './types'
 import { getDeviceProfile } from './device-profiles'
+import type { HttpResponseResult } from '../../electron/shared/bridge'
 
 export interface HandlerDeps {
   /** 获取当前 webview 实例 */
@@ -10,6 +11,14 @@ export interface HandlerDeps {
   getConfig: () => BridgeConfig
   /** 记录系统日志 */
   log: (message: string, detail?: unknown) => void
+  /** 记录 Electron 方向的完全体请求/响应报文 */
+  logWire?: (entry: {
+    action: string
+    message: string
+    level?: LogLevel
+    detail?: unknown
+    wire: ElectronWirePayload
+  }) => void
   /** Token 错误或过期回调 */
   onAuthExpired?: (reason?: string) => void
 }
@@ -156,13 +165,39 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
   // 刷新 token
   bridge.registerHandler('refreshToken', async (data) => {
     log('[refreshToken]', data)
-    return buildAuthData(getConfig())
+    const authData = buildAuthData(getConfig())
+    deps.logWire?.({
+      action: 'refreshToken',
+      message: `H5 请求刷新凭证完全体`,
+      level: 'info',
+      detail: authData,
+      wire: {
+        channel: 'refreshToken',
+        action: 'refreshToken',
+        status: 200,
+        response: { data: authData }
+      }
+    })
+    return authData
   })
 
   // 获取认证信息
   bridge.registerHandler('getAuth', async (data) => {
     log('[getAuth]', data)
-    return buildAuthData(getConfig())
+    const authData = buildAuthData(getConfig())
+    deps.logWire?.({
+      action: 'getAuth',
+      message: `H5 获取认证凭证完全体 (userID: ${authData.userID || '未登录'})`,
+      level: 'info',
+      detail: authData,
+      wire: {
+        channel: 'getAuth',
+        action: 'getAuth',
+        status: 200,
+        response: { data: authData }
+      }
+    })
+    return authData
   })
 
   // 获取初始化数据
@@ -266,21 +301,73 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     if (typeof obj.url !== 'string' || !obj.url) return null
     const method = typeof obj.method === 'string' ? obj.method : 'POST'
 
+    const startTime = Date.now()
     const res = (await window.bridge.httpRequest({
       url: obj.url,
       method,
       params: obj.params,
       header: obj.header,
       body: obj.body
-    })) as { status: number; data: unknown }
+    })) as HttpResponseResult
+
+    const duration = res?.timeMs ?? (Date.now() - startTime)
+    const finalMethod = (res?.requestInfo?.method || method).toUpperCase()
+    const finalUrl = res?.requestInfo?.url || String(obj.url)
+    const status = res?.status ?? 200
+
+    // 记录 Electron 方向网络请求完全体（含完整 Headers、签名、Body 及响应）
+    deps.logWire?.({
+      action: `HTTP ${finalMethod}`,
+      message: `${finalMethod} ${finalUrl} [${status} ${res?.statusText || ''}] (${duration}ms)`,
+      level: status >= 400 ? (status >= 500 ? 'error' : 'warn') : 'info',
+      detail: {
+        request: {
+          url: finalUrl,
+          method: finalMethod,
+          headers: res?.requestInfo?.headers,
+          params: obj.params,
+          body: res?.requestInfo?.body,
+          rawBody: obj.body
+        },
+        response: {
+          status,
+          statusText: res?.statusText,
+          headers: res?.headers,
+          data: res?.data
+        },
+        durationMs: duration,
+        sizeBytes: res?.sizeBytes
+      },
+      wire: {
+        channel: 'proxy',
+        action: `HTTP ${finalMethod}`,
+        status,
+        statusText: res?.statusText,
+        durationMs: duration,
+        sizeBytes: res?.sizeBytes,
+        request: {
+          url: finalUrl,
+          method: finalMethod,
+          headers: res?.requestInfo?.headers,
+          params: obj.params,
+          body: res?.requestInfo?.body,
+          rawBody: obj.body
+        },
+        response: {
+          status,
+          statusText: res?.statusText,
+          headers: res?.headers,
+          data: res?.data
+        }
+      }
+    })
 
     const authErr = checkAuthError(res?.status, res?.data)
     if (authErr) {
-      log(`[proxy] 发现 Token 错误/已过期: ${authErr}，强制退出登录`, res)
-      deps.onAuthExpired?.(authErr)
+      log(`[proxy] 提示: 接口响应提示鉴权异常或Token已过期: ${authErr}`, res?.data)
     }
 
-    log(`[proxy] ← ${method.toUpperCase()} ${obj.url} [HTTP ${res?.status}]`, res?.data)
+    log(`[proxy] ← ${finalMethod} ${finalUrl} [HTTP ${status}]`, res?.data)
     return res?.data
   })
 
@@ -289,19 +376,74 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     log('[getNodeConfig] 获取当前环境节点配置', data)
     const result = await window.bridge.getNodeConfig()
     log('[getNodeConfig] 结果:', result)
+
+    deps.logWire?.({
+      action: 'getNodeConfig',
+      message: `获取节点配置完全体: ${result?.data?.url || '默认节点'}`,
+      level: 'info',
+      detail: result,
+      wire: {
+        channel: 'getNodeConfig',
+        action: 'getNodeConfig',
+        status: 200,
+        request: {
+          url: result?.data?.url,
+          extra: { input: data }
+        },
+        response: {
+          status: 200,
+          data: result?.data
+        }
+      }
+    })
+
     return result
   })
 
   // 钱包 WebSocket 桥接：还原 Flutter JsBridgeWalletWs
   bridge.registerHandler('walletWs', async (data) => {
     log('[walletWs] 发送 WS 指令/消息', data)
-    return await window.bridge.walletWs(data)
+    const result = await window.bridge.walletWs(data)
+
+    deps.logWire?.({
+      action: 'walletWs',
+      message: `WS 指令发送完全体: ${typeof data === 'object' ? JSON.stringify(data) : String(data)}`,
+      level: 'info',
+      detail: { input: data, result },
+      wire: {
+        channel: 'walletWs',
+        action: 'walletWs',
+        status: 200,
+        request: {
+          body: data
+        },
+        response: {
+          data: result
+        }
+      }
+    })
+
+    return result
   })
 
   // 监听来自主进程的 WS 推送，并回调 H5 的 onWalletMessage
   if (window.bridge?.onWalletWsMessage) {
     window.bridge.onWalletWsMessage((msg) => {
       log('[walletWs] 收到服务端推送 -> onWalletMessage', msg)
+      deps.logWire?.({
+        action: 'walletWs:recv',
+        message: `收到服务端 WebSocket 推送完全体`,
+        level: 'info',
+        detail: msg,
+        wire: {
+          channel: 'walletWs',
+          action: 'onWalletMessage',
+          status: 200,
+          response: {
+            data: msg
+          }
+        }
+      })
       void bridge.callHandler('onWalletMessage', msg)
     })
   }
@@ -334,7 +476,7 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
   // 获取公钥
   bridge.registerHandler('pubKey', async () => {
     const key = getConfig().auth.pubKey || DEFAULT_PUB_KEY
-    log(`[pubKey] return key (${key ? key.slice(0, 30) + '...' : 'empty'})`)
+    log(`[pubKey] return key (${key || 'empty'})`)
     return key
   })
 

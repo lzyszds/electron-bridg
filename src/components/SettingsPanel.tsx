@@ -46,10 +46,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }, [onClose])
 
   const authFields: { key: keyof AuthConfig; label: string; type?: 'text' | 'password' }[] = [
-    { key: 'secretKey', label: 'Secret Key', type: 'password' },
-    { key: 'token', label: 'Token', type: 'password' },
-    { key: 'chatToken', label: 'Chat Token', type: 'password' },
-    { key: 'imToken', label: 'IM Token', type: 'password' },
+    { key: 'secretKey', label: 'Secret Key (全明文)' },
+    { key: 'token', label: 'Token (全明文)' },
+    { key: 'chatToken', label: 'Chat Token (全明文)' },
+    { key: 'imToken', label: 'IM Token (全明文)' },
     { key: 'userID', label: 'User ID' },
     { key: 'groupID', label: 'Group ID' },
     { key: 'pubKey', label: 'PubKey (RSA)' }

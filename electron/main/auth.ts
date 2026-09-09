@@ -31,6 +31,7 @@ const defaults: AuthStore = {
 /** 页面 getAuth 期望的 token 负载 */
 export interface AuthTokenPayload {
   token: string
+  walletToken?: string
   secretKey: string
   kbitToken: string
   chatToken: string
@@ -64,7 +65,22 @@ function loadStore(env?: EnvMode): AuthStore {
   try {
     const path = getStorePath(env)
     if (existsSync(path)) {
-      return { ...defaults, ...JSON.parse(readFileSync(path, 'utf-8')) }
+      const store: AuthStore = { ...defaults, ...JSON.parse(readFileSync(path, 'utf-8')) }
+      // 如果当前 env 的 store 缺少有效 token，检查旧版 legacy auth.json 并自动回填
+      if (!store.token && !store.chatToken && !store.walletToken) {
+        const legacyPath = join(app.getPath('userData'), 'auth', 'auth.json')
+        if (existsSync(legacyPath)) {
+          try {
+            const legacyStore = JSON.parse(readFileSync(legacyPath, 'utf-8'))
+            if (legacyStore.token || legacyStore.chatToken || legacyStore.walletToken) {
+              const merged: AuthStore = { ...defaults, ...legacyStore }
+              saveStore(merged, env)
+              return merged
+            }
+          } catch {}
+        }
+      }
+      return store
     }
   } catch (e) {
     console.error(`[Auth] 读取存储失败 (${resolveEnv(env)}):`, e)
@@ -112,6 +128,7 @@ export function getAuthTokens(env?: EnvMode): AuthTokenPayload {
   const store = loadStore(env)
   return {
     token: store.walletToken || store.token,
+    walletToken: store.walletToken || store.token,
     secretKey: store.secretKey,
     kbitToken: store.kbitToken,
     chatToken: store.chatToken || store.token

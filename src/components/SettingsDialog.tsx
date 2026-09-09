@@ -4,7 +4,7 @@ import { DEVICE_PROFILES } from '../bridge/device-profiles'
 import type { AuthConfig } from '../bridge/types'
 import { H5_MODULES, BASE_URL_PRESETS, MODULE_CATEGORIES, buildModuleUrl } from '../config/modules'
 import { cn } from '../lib/utils'
-import { Settings, Globe, Server, ShieldCheck, X } from 'lucide-react'
+import { Settings, Globe, Server, ShieldCheck, X, Copy, Check } from 'lucide-react'
 
 export interface AppConfig {
   envMode?: 'prod' | 'test'
@@ -126,11 +126,19 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     bridgeConfig.reset()
   }
 
-  const authFields: { key: keyof AuthConfig; label: string; type?: 'text' | 'password' }[] = [
-    { key: 'secretKey', label: 'Secret Key', type: 'password' },
-    { key: 'token', label: 'Token', type: 'password' },
-    { key: 'chatToken', label: 'Chat Token', type: 'password' },
-    { key: 'imToken', label: 'IM Token', type: 'password' },
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+  const handleCopyField = (key: string, val: string) => {
+    if (!val) return
+    navigator.clipboard.writeText(val)
+    setCopiedField(key)
+    setTimeout(() => setCopiedField(null), 1500)
+  }
+
+  const authFields: { key: keyof AuthConfig; label: string }[] = [
+    { key: 'secretKey', label: 'Secret Key (全明文)' },
+    { key: 'token', label: 'Token (全明文)' },
+    { key: 'chatToken', label: 'Chat Token (全明文)' },
+    { key: 'imToken', label: 'IM Token (全明文)' },
     { key: 'userID', label: 'User ID' },
     { key: 'groupID', label: 'Group ID' },
     { key: 'pubKey', label: 'PubKey (RSA)' }
@@ -507,20 +515,45 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {authFields.map((f) => (
-                  <div key={f.key} className="space-y-1">
-                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                      {f.label}
-                    </label>
-                    <input
-                      type={f.type || 'text'}
-                      value={auth[f.key]}
-                      onChange={(e) => bridgeConfig.setAuth(f.key, e.target.value)}
-                      placeholder={`mock ${f.label}`}
-                      className="flex h-8 w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 text-xs font-mono text-zinc-700 placeholder:text-zinc-400 focus-visible:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                    />
-                  </div>
-                ))}
+                {authFields.map((f) => {
+                  const val = auth[f.key] || ''
+                  return (
+                    <div key={f.key} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                          {f.label}
+                        </label>
+                        {val && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyField(f.key, val)}
+                            className="text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer flex items-center gap-1 font-sans"
+                            title={`复制 ${f.label}`}
+                          >
+                            {copiedField === f.key ? (
+                              <>
+                                <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                <span className="text-emerald-600">已复制</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-2.5 h-2.5" />
+                                <span>复制</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={val}
+                        onChange={(e) => bridgeConfig.setAuth(f.key, e.target.value)}
+                        placeholder={`mock ${f.label}`}
+                        className="flex h-8 w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 text-xs font-mono text-zinc-700 placeholder:text-zinc-400 focus-visible:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 select-all"
+                      />
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

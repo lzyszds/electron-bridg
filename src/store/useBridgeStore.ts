@@ -5,6 +5,7 @@ import { defaultBridgeConfig, type AuthConfig, type BridgeConfig } from '../brid
 interface BridgeState extends BridgeConfig {
   setConfig: <K extends keyof BridgeConfig>(key: K, value: BridgeConfig[K]) => void
   setAuth: <K extends keyof AuthConfig>(key: K, value: AuthConfig[K]) => void
+  clearAuth: () => void
   reset: () => void
 }
 
@@ -19,6 +20,7 @@ export const useBridgeStore = create<BridgeState>()(
       setConfig: (key, value) => set({ [key]: value } as Partial<BridgeState>),
       setAuth: (key, value) =>
         set((state) => ({ auth: { ...state.auth, [key]: value } } as Partial<BridgeState>)),
+      clearAuth: () => set({ auth: { ...defaultBridgeConfig.auth } } as Partial<BridgeState>),
       reset: () => set({ ...defaultBridgeConfig })
     })
   )

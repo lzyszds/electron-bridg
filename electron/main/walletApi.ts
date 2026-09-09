@@ -54,7 +54,11 @@ export async function fetchPubKey(walletUrl: string): Promise<string> {
 /** 从 wallet JWT 解析 userSecret（后端 HMAC 验签用的密钥） */
 export function getWalletSignSecret(walletToken?: string, secretKey?: string): string {
   if (walletToken) {
-    const parts = walletToken.split('.')
+    let raw = walletToken.trim()
+    if (raw.toLowerCase().startsWith('bearer ')) {
+      raw = raw.slice(7).trim()
+    }
+    const parts = raw.split('.')
     if (parts.length >= 2) {
       try {
         let payload = parts[1]

@@ -142,6 +142,15 @@ export const H5_MODULES: H5Module[] = [
     icon: '👑'
   },
   {
+    id: 'module-vip-modifyTag',
+    name: '个性化特权展示',
+    category: 'business',
+    categoryName: '核心业务',
+    path: '/module/vip/modifyVipTag',
+    description: '彩色昵称、会员等级标识等个性化特权展示配置',
+    icon: '✨'
+  },
+  {
     id: 'module-inviteCenter',
     name: '邀请中心',
     category: 'business',
@@ -306,6 +315,24 @@ export const H5_MODULES: H5Module[] = [
     path: '/module/feedback',
     description: '提交工单与产品体验反馈',
     icon: '💬'
+  },
+  {
+    id: 'support-tradepwd-appeal',
+    name: '资金密码申诉',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/module/iForget/tradepwd',
+    description: '资金密码找回、曾用密码及实名申诉流程',
+    icon: '🔐'
+  },
+  {
+    id: 'support-iForget',
+    name: '登录密码申诉',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/module/iForget/password',
+    description: '账号登录密码安全申诉与凭证重置',
+    icon: '🔑'
   },
   {
     id: 'support-banRecord',

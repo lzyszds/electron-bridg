@@ -16,9 +16,34 @@ export interface BridgeConfig {
   auth: AuthConfig
 }
 
-export type LogSource = 'console' | 'bridge' | 'system'
+export type LogSource = 'console' | 'bridge' | 'electron' | 'system'
 
 export type LogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug' | 'system'
+
+/** Electron 方向执行的桥接底层完全体报文载荷 */
+export interface ElectronWirePayload {
+  channel: string
+  action?: string
+  status?: number
+  statusText?: string
+  durationMs?: number
+  sizeBytes?: number
+  request?: {
+    url?: string
+    method?: string
+    headers?: Record<string, string>
+    params?: Record<string, unknown>
+    body?: unknown
+    rawBody?: unknown
+    extra?: Record<string, unknown>
+  }
+  response?: {
+    status?: number
+    statusText?: string
+    headers?: Record<string, string>
+    data?: unknown
+  }
+}
 
 export interface LogEntry {
   id: number
@@ -29,6 +54,7 @@ export interface LogEntry {
   direction?: 'in' | 'out'
   action?: string
   timestamp: number
+  wire?: ElectronWirePayload
 }
 
 export const DEFAULT_PUB_KEY = `-----BEGIN PUBLIC KEY-----

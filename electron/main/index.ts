@@ -158,17 +158,21 @@ function registerBridgeIpc(): void {
       }
 
       // 2. 注入 Flutter 客户端通用设备头
+      const envMode = appConfig.envMode || 'prod'
       const deviceId = getMachineId()
-      const userId = getUserID()
-      const tokens = getAuthTokens()
+      const userId = getUserID(envMode)
+      const tokens = getAuthTokens(envMode)
 
-      headers['DeviceId'] = deviceId
-      headers['Deviceld'] = deviceId
-      headers['AppType'] = 'QQLink'
-      headers['Accept-Language'] = headers['Accept-Language'] || 'zh-CN'
-      headers['Version'] = headers['Version'] || 'android-1.0.0'
-      headers['Terminal-Version'] = '1.0.0'
-      if (userId) {
+      const hasHeader = (name: string) =>
+        Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase())
+
+      if (!hasHeader('DeviceId')) headers['DeviceId'] = deviceId
+      if (!hasHeader('Deviceld')) headers['Deviceld'] = deviceId
+      if (!hasHeader('AppType')) headers['AppType'] = 'QQLink'
+      if (!hasHeader('Accept-Language')) headers['Accept-Language'] = 'zh-CN'
+      if (!hasHeader('Version')) headers['Version'] = 'android-1.0.0'
+      if (!hasHeader('Terminal-Version')) headers['Terminal-Version'] = '1.0.0'
+      if (userId && !hasHeader('userId') && !hasHeader('userID')) {
         headers['userId'] = userId
       }
 
@@ -180,13 +184,15 @@ function registerBridgeIpc(): void {
 
       // 3. 针对 Wallet 接口：注入 Token、签名及 RSA+AES 加密
       if (isWallet) {
-        if (tokens.token || (tokens as any).walletToken) {
+        if (!hasHeader('Authorization') && (tokens.token || (tokens as any).walletToken)) {
           headers['Authorization'] = `Bearer ${(tokens as any).walletToken || tokens.token}`
         }
-        if (tokens.kbitToken) {
+        if (!hasHeader('Kbit-Token') && tokens.kbitToken) {
           headers['Kbit-Token'] = `Bearer ${tokens.kbitToken}`
         }
-        headers['operationID'] = headers['operationID'] || uuidv4()
+        if (!hasHeader('operationID')) {
+          headers['operationID'] = uuidv4()
+        }
 
         // 检查 body 加密
         const isPostOrPut = ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())
@@ -212,25 +218,44 @@ function registerBridgeIpc(): void {
               console.warn('[Proxy Bridge] 获取公钥或加密失败，保持原文发送:', err)
             }
           }
+        }
 
-          // 生成 HMAC-SHA256 签名
-          const secret = getWalletSignSecret((tokens as any).walletToken, tokens.secretKey)
-          const signResult = generateWalletSignature({
-            data: finalBody,
-            secret
-          })
-          headers['X-Timestamp'] = String(signResult.timestamp)
-          headers['X-Nonce'] = signResult.nonce
-          headers['X-Signature'] = signResult.signature
+        // 对齐 Flutter WalletDio.genSign：无论 GET 还是 POST 请求，缺少签名头时均需计算注入
+        if (!hasHeader('X-Signature')) {
+          let signData = (finalBody !== undefined && finalBody !== null) ? finalBody : params
+          if (typeof signData === 'string') {
+            try {
+              signData = JSON.parse(signData)
+            } catch {}
+          }
+          const authHeader = headers['Authorization'] || headers['authorization']
+          const secret = getWalletSignSecret(
+            authHeader || tokens.walletToken || tokens.token,
+            tokens.secretKey
+          )
+          if (secret) {
+            const signResult = generateWalletSignature({
+              data: signData,
+              secret
+            })
+            headers['X-Timestamp'] = String(signResult.timestamp)
+            headers['X-Nonce'] = signResult.nonce
+            headers['X-Signature'] = signResult.signature
+            console.log(`[Proxy Bridge] 成功为 Wallet 请求生成 HMAC-SHA256 签名 (X-Signature: ${signResult.signature.slice(0, 16)}...)`)
+          } else {
+            console.warn('[Proxy Bridge] 警告: 未能提取到 HMAC secretKey，无法生成 X-Signature!')
+          }
         }
       }
 
       // 4. 针对 Chat 接口：注入 chatToken 与 operationID
       if (isChat) {
-        if (tokens.chatToken || tokens.token) {
+        if (!hasHeader('token') && (tokens.chatToken || tokens.token)) {
           headers['token'] = tokens.chatToken || tokens.token
         }
-        headers['operationID'] = headers['operationID'] || uuidv4()
+        if (!hasHeader('operationID')) {
+          headers['operationID'] = uuidv4()
+        }
       }
 
       let requestBody: string | undefined
@@ -241,12 +266,19 @@ function registerBridgeIpc(): void {
         }
       }
 
+      const startTime = Date.now()
       try {
         console.log(`[Proxy Bridge] >>> ${method.toUpperCase()} ${target.toString()}`)
         const res = await fetch(target.toString(), {
           method: method.toUpperCase(),
           headers,
           body: requestBody
+        })
+
+        const duration = Date.now() - startTime
+        const responseHeaders: Record<string, string> = {}
+        res.headers.forEach((val, key) => {
+          responseHeaders[key] = val
         })
 
         const text = await res.text()
@@ -256,11 +288,46 @@ function registerBridgeIpc(): void {
         } catch {
           // 非 JSON 原样保持
         }
-        console.log(`[Proxy Bridge] <<< ${res.status} ${target.pathname}`)
-        return { status: res.status, data }
+        console.log(`[Proxy Bridge] <<< ${res.status} ${target.pathname} (${duration}ms)`)
+        if (data && typeof data === 'object') {
+          const d = data as any
+          const code = d.errCode ?? d.ErrCode ?? d.code
+          const msg = d.errMsg ?? d.ErrMsg ?? d.message ?? d.errDlt
+          if (code && code !== 0 && code !== 200) {
+            console.warn(`[Proxy Bridge] 接口返回异常 [code: ${code}]: ${msg} (${target.pathname})`)
+          }
+        }
+        return {
+          status: res.status,
+          statusText: res.statusText || (res.status >= 200 && res.status < 300 ? 'OK' : 'Error'),
+          data,
+          headers: responseHeaders,
+          timeMs: duration,
+          sizeBytes: new TextEncoder().encode(text).length,
+          requestInfo: {
+            url: target.toString(),
+            method: method.toUpperCase(),
+            headers,
+            body: finalBody
+          }
+        }
       } catch (err: any) {
+        const duration = Date.now() - startTime
         console.error(`[Proxy Bridge] 请求失败:`, err?.message || err)
-        return { status: 500, data: { errCode: -1, errMsg: err?.message || 'Proxy request error' } }
+        return {
+          status: 500,
+          statusText: 'Internal Error',
+          data: { errCode: -1, errMsg: err?.message || 'Proxy request error' },
+          headers: {},
+          timeMs: duration,
+          sizeBytes: 0,
+          requestInfo: {
+            url: target.toString(),
+            method: method.toUpperCase(),
+            headers,
+            body: finalBody
+          }
+        }
       }
     }
   )

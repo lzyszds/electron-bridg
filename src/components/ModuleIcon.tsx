@@ -24,6 +24,8 @@ import {
   FileText,
   HelpCircle,
   Terminal,
+  Lock,
+  KeyRound,
   LucideIcon
 } from 'lucide-react'
 
@@ -47,6 +49,8 @@ const MODULE_ICON_MAP: Record<string, LucideIcon> = {
   'asset-bankCard': CreditCard,
 
   // 核心业务
+  'module-vip': Crown,
+  'module-vip-modifyTag': Sparkles,
   'business-chat': MessageSquare,
   'business-discovery': Compass,
   'business-safeCenter': ShieldCheck,
@@ -62,7 +66,9 @@ const MODULE_ICON_MAP: Record<string, LucideIcon> = {
   // 支持调试
   'dev-testPage': Bug,
   'dev-bridgeDebug': Wrench,
-  'dev-vConsole': Terminal
+  'dev-vConsole': Terminal,
+  'support-tradepwd-appeal': Lock,
+  'support-iForget': KeyRound
 }
 
 // 分类兜底图标
