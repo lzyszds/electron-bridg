@@ -33,6 +33,12 @@ import {
   getWalletSignSecret,
   generateWalletSignature
 } from './walletApi'
+import {
+  isXueqiuHost,
+  isXueqiuTokenEndpoint,
+  getXueqiuTokenPayload,
+  patchXueqiuHeaders
+} from './xueqiuToken'
 
 // 全局持久化存储实例
 const store = new Store({
@@ -157,7 +163,9 @@ function registerBridgeIpc(): void {
         ...(header ?? {})
       }
 
-      // 2. 注入 Flutter 客户端通用设备头
+      // 2. 仅对 QQLink 自家域名注入设备头 / 钱包鉴权。
+      //    不能用 host.startsWith('api.')：美股行情会请求 api.xueqiu.com，
+      //    误判成 Wallet 后会带上 Authorization、HMAC 签名，雪球直接 400。
       const envMode = appConfig.envMode || 'prod'
       const deviceId = getMachineId()
       const userId = getUserID(envMode)
@@ -166,27 +174,89 @@ function registerBridgeIpc(): void {
       const hasHeader = (name: string) =>
         Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase())
 
-      if (!hasHeader('DeviceId')) headers['DeviceId'] = deviceId
-      if (!hasHeader('Deviceld')) headers['Deviceld'] = deviceId
-      if (!hasHeader('AppType')) headers['AppType'] = 'QQLink'
-      if (!hasHeader('Accept-Language')) headers['Accept-Language'] = 'zh-CN'
-      if (!hasHeader('Version')) headers['Version'] = 'android-1.0.0'
-      if (!hasHeader('Terminal-Version')) headers['Terminal-Version'] = '1.0.0'
-      if (userId && !hasHeader('userId') && !hasHeader('userID')) {
-        headers['userId'] = userId
+      const hostname = target.hostname.toLowerCase()
+      const isSameOrigin = (base?: string) => {
+        if (!base) return false
+        try {
+          return target.origin === new URL(base).origin
+        } catch {
+          return false
+        }
+      }
+      const isQqlinkHost = /(^|\.)qqlink\.(live|buzz|info|xin)$/i.test(hostname)
+      const isFirstParty = isQqlinkHost || isSameOrigin(appConfig.walletUrl) || isSameOrigin(appConfig.apiBaseUrl)
+      const isWallet = isFirstParty && (hostname.startsWith('api.') || isSameOrigin(appConfig.walletUrl))
+      const isChat = isFirstParty && (hostname.startsWith('chat.') || isSameOrigin(appConfig.apiBaseUrl))
+      const isXueqiu = isXueqiuHost(hostname)
+
+      // H5 对 oauth/token 发的是空 POST，雪球会 400。宿主按 Flutter/PC 的表单重放并回给 H5。
+      if (isXueqiuTokenEndpoint(target)) {
+        const startTime = Date.now()
+        try {
+          console.log(`[Proxy Bridge] >>> 代取雪球 token ${target.toString()}`)
+          const tokenData = await getXueqiuTokenPayload()
+          const duration = Date.now() - startTime
+          console.log(`[Proxy Bridge] <<< 200 /provider/oauth/token (${duration}ms)`)
+          return {
+            status: 200,
+            statusText: 'OK',
+            data: tokenData,
+            headers: { 'content-type': 'application/json' },
+            timeMs: duration,
+            sizeBytes: JSON.stringify(tokenData).length,
+            requestInfo: {
+              url: target.toString(),
+              method: 'POST',
+              headers,
+              body: undefined
+            }
+          }
+        } catch (err: any) {
+          const duration = Date.now() - startTime
+          console.error(`[Proxy Bridge] 雪球 token 获取失败:`, err?.message || err)
+          return {
+            status: 500,
+            statusText: 'Internal Error',
+            data: { error_description: err?.message || 'xueqiu token error', error_code: 'proxy' },
+            headers: {},
+            timeMs: duration,
+            sizeBytes: 0,
+            requestInfo: {
+              url: target.toString(),
+              method: 'POST',
+              headers,
+              body: undefined
+            }
+          }
+        }
       }
 
-      const hostLower = target.host.toLowerCase()
-      const isWallet = hostLower.startsWith('api.') || target.origin === new URL(appConfig.walletUrl).origin
-      const isChat = hostLower.startsWith('chat.') || target.origin === new URL(appConfig.apiBaseUrl).origin
+      if (isXueqiu) {
+        Object.assign(headers, await patchXueqiuHeaders(target, headers))
+      }
+
+      if (isFirstParty) {
+        if (!hasHeader('DeviceId')) headers['DeviceId'] = deviceId
+        if (!hasHeader('Deviceld')) headers['Deviceld'] = deviceId
+        if (!hasHeader('AppType')) headers['AppType'] = 'QQLink'
+        if (!hasHeader('Accept-Language')) headers['Accept-Language'] = 'zh-CN'
+        if (!hasHeader('Version')) headers['Version'] = 'android-1.0.0'
+        if (!hasHeader('Terminal-Version')) headers['Terminal-Version'] = '1.0.0'
+        if (userId && !hasHeader('userId') && !hasHeader('userID')) {
+          headers['userId'] = userId
+        }
+      } else {
+        console.log(`[Proxy Bridge] 第三方请求，跳过 Wallet/Chat 鉴权注入: ${target.host}`)
+      }
 
       let finalBody = payload.body
 
       // 3. 针对 Wallet 接口：注入 Token、签名及 RSA+AES 加密
       if (isWallet) {
-        if (!hasHeader('Authorization') && (tokens.token || (tokens as any).walletToken)) {
-          headers['Authorization'] = `Bearer ${(tokens as any).walletToken || tokens.token}`
+        if (!hasHeader('Authorization') && (tokens.token || tokens.walletToken)) {
+          headers['Authorization'] = `Bearer ${tokens.walletToken || tokens.token}`
         }
+        // 对齐 Flutter WalletDio：Kbit-Token 带 Bearer 前缀
         if (!hasHeader('Kbit-Token') && tokens.kbitToken) {
           headers['Kbit-Token'] = `Bearer ${tokens.kbitToken}`
         }
@@ -645,17 +715,8 @@ function setupNetworkSecurity(): void {
     const cfg = loadConfig()
     const isTest = cfg.envMode === 'test'
 
-    // 针对节点探测 txt：测试环境返回 qqlink.buzz，正式环境返回 qqlink.live
-    if (details.url.includes('configQQLinkTest.txt') || (isTest && details.url.includes('configQQLink.txt'))) {
-      return callback({
-        redirectURL: 'data:text/plain;charset=utf-8,qqlink.buzz,qqlink.buzz'
-      })
-    }
-    if (details.url.includes('configQQLink.txt')) {
-      return callback({
-        redirectURL: 'data:text/plain;charset=utf-8,qqlink.live,qqlink.live\nqqlink.xin,qqlink.xin'
-      })
-    }
+    // 不要把 OBS txt 重定向到 data: URL，Chromium 会报 ERR_UNSAFE_REDIRECT，
+    // H5 节点探测直接 Failed to fetch。节点内容已由 getNodeConfig 桥返回。
 
     // 仅在正式环境进行 xin -> live 兼容映射（避开 CSP 阻断），避免影响测试环境的 buzz 域名
     if (!isTest) {

@@ -12,6 +12,10 @@ import {
   H5_MODULES,
   MODULE_CATEGORIES,
   buildModuleUrl,
+  envPresetPatch,
+  isUrlForEnv,
+  isBlankUrl,
+  withAppChannel,
   extractModulePath,
   ENV_MODES,
   type H5Module,
@@ -58,6 +62,7 @@ function App() {
   const webviewRef = useRef<WebviewTag | null>(null)
   const bridgeRef = useRef<JsBridge | null>(null)
   const preloadPathRef = useRef<string>('')
+  const [preloadPath, setPreloadPath] = useState('')
 
   const [url, setUrl] = useState('')
   const [inputUrl, setInputUrl] = useState('')
@@ -70,7 +75,7 @@ function App() {
   // 模块切换与环境记忆状态
   const [envMode, setEnvMode] = useState<EnvMode>('prod')
   const [currentModuleId, setCurrentModuleId] = useState<string>('financial-usStocks')
-  const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('https://module.qqlink.info')
+  const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('https://module.qqlink.live')
   const [locale, setLocale] = useState<string>('zh-hans')
   const [withDebugParams, setWithDebugParams] = useState<boolean>(true)
   const [showLogPanel, setShowLogPanel] = useState<boolean>(true)
@@ -124,14 +129,18 @@ function App() {
         if (cfg.locale) targetLocale = cfg.locale
         if (cfg.withDebugParams !== undefined) targetDebug = cfg.withDebugParams
         if (cfg.lastModuleId) targetModId = cfg.lastModuleId
-        if (cfg.webviewUrl) targetUrl = cfg.webviewUrl
+        if (cfg.webviewUrl && isUrlForEnv(cfg.webviewUrl, mode) && !isBlankUrl(cfg.webviewUrl)) {
+          targetUrl = cfg.webviewUrl
+        }
       } catch {
         // 忽略
       }
 
       const localLastUrl = localStorage.getItem('qqlink_last_visited_url')
       const localLastMod = localStorage.getItem('qqlink_last_module_id')
-      if (localLastUrl) targetUrl = localLastUrl
+      if (localLastUrl && isUrlForEnv(localLastUrl, mode) && !isBlankUrl(localLastUrl)) {
+        targetUrl = localLastUrl
+      }
       if (localLastMod) targetModId = localLastMod
 
       setEnvMode(targetEnv)
@@ -140,10 +149,26 @@ function App() {
       setWithDebugParams(targetDebug)
       setCurrentModuleId(targetModId)
 
-      // 若无有效目标地址，则拼接该模块默认地址
-      if (!targetUrl) {
+      // 跨环境留下的 buzz/info/about:blank 地址一律丢弃，按当前环境重拼
+      if (!targetUrl || !isUrlForEnv(targetUrl, mode) || isBlankUrl(targetUrl)) {
         const mod = H5_MODULES.find((m) => m.id === targetModId) || H5_MODULES[0]
-        targetUrl = buildModuleUrl(targetBase, mod.path, targetLocale, targetDebug)
+        targetUrl = withAppChannel(
+          buildModuleUrl(targetBase, mod.path, targetLocale, targetDebug)
+        )
+      } else {
+        targetUrl = withAppChannel(targetUrl)
+      }
+
+      localStorage.setItem('qqlink_env_mode', mode)
+      localStorage.setItem('qqlink_last_visited_url', targetUrl)
+      try {
+        await window.appConfig?.setConfig({
+          ...envPresetPatch(mode),
+          lastModuleId: targetModId,
+          webviewUrl: targetUrl
+        })
+      } catch {
+        // 忽略
       }
 
       setUrl(targetUrl)
@@ -226,10 +251,12 @@ function App() {
     checkAuth()
   }, [syncTokensAndEnterMain])
 
-  // ===== 获取 webview preload 路径 =====
+  // ===== 获取 webview preload 路径（必须先拿到再挂 <webview>，否则 preload 是 file://undefined） =====
   useEffect(() => {
     window.bridge?.getPreloadPath().then((p) => {
+      if (!p) return
       preloadPathRef.current = p
+      setPreloadPath(p)
     })
   }, [])
 
@@ -273,7 +300,9 @@ function App() {
       setCurrentModuleId(mod.id)
       localStorage.setItem('qqlink_last_module_id', mod.id)
 
-      const fullUrl = buildModuleUrl(currentBaseUrl, mod.path, locale, withDebugParams)
+      const fullUrl = withAppChannel(
+        buildModuleUrl(currentBaseUrl, mod.path, locale, withDebugParams)
+      )
       setUrl(fullUrl)
       setInputUrl(fullUrl)
       localStorage.setItem('qqlink_last_visited_url', fullUrl)
@@ -381,7 +410,7 @@ function App() {
     })
 
     bridgeRef.current = bridge
-  }, [pageState, addLog, handleAuthExpired])
+  }, [pageState, preloadPath, addLog, handleAuthExpired])
 
   // ===== 监听 webview 事件 =====
   useEffect(() => {
@@ -410,38 +439,45 @@ function App() {
       setBridgeReady(false)
     }
 
-    const onDidStopLoading = () => {
-      setIsLoading(false)
-      const currentUrl = wv.getURL()
-      setUrl(currentUrl)
-      setInputUrl(currentUrl)
-      setCanGoBack(wv.canGoBack())
-      setCanGoForward(wv.canGoForward())
-    }
+    const syncUrlFromWebview = () => {
+      try {
+        const currentUrl = wv.getURL()
+        // 绝不能把 about:blank 写回 state，否则 withAppChannel 会变成 about:blank?channel=qqlink 死循环
+        if (isBlankUrl(currentUrl)) return
+        setUrl(currentUrl)
+        setInputUrl(currentUrl)
+        setCanGoBack(wv.canGoBack())
+        setCanGoForward(wv.canGoForward())
+        localStorage.setItem('qqlink_last_visited_url', currentUrl)
+        window.appConfig?.setConfig({ webviewUrl: currentUrl }).catch(() => {})
 
-    const onDidNavigate = () => {
-      const currentUrl = wv.getURL()
-      setUrl(currentUrl)
-      setInputUrl(currentUrl)
-      setCanGoBack(wv.canGoBack())
-      setCanGoForward(wv.canGoForward())
-      localStorage.setItem('qqlink_last_visited_url', currentUrl)
-      window.appConfig?.setConfig({ webviewUrl: currentUrl }).catch(() => {})
-
-      // 自动高亮识别当前匹配的模块（按路径长度降序优先匹配更深层级的具体路由）
-      const sortedModules = [...H5_MODULES].sort((a, b) => b.path.length - a.path.length)
-      for (const mod of sortedModules) {
-        if (currentUrl.includes(mod.path)) {
-          setCurrentModuleId(mod.id)
-          localStorage.setItem('qqlink_last_module_id', mod.id)
-          window.appConfig?.setConfig({ lastModuleId: mod.id }).catch(() => {})
-          break
+        const sortedModules = [...H5_MODULES].sort((a, b) => b.path.length - a.path.length)
+        for (const mod of sortedModules) {
+          if (currentUrl.includes(mod.path)) {
+            setCurrentModuleId(mod.id)
+            localStorage.setItem('qqlink_last_module_id', mod.id)
+            window.appConfig?.setConfig({ lastModuleId: mod.id }).catch(() => {})
+            break
+          }
         }
+      } catch {
+        // webview 尚未 dom-ready
       }
     }
 
+    const onDidStopLoading = () => {
+      setIsLoading(false)
+      syncUrlFromWebview()
+    }
+
+    const onDidNavigate = () => {
+      syncUrlFromWebview()
+    }
+
     const onDomReady = () => {
-      wv.executeJavaScript(`${webviewPolyfills}\n${webviewBridgeSdk}`).catch(() => {})
+      wv.executeJavaScript(
+        `${webviewPolyfills}\n${webviewBridgeSdk}\nwindow.__QQLINK_WEBVIEW__=true;`
+      ).catch(() => {})
     }
 
     wv.addEventListener('ipc-message', onIpcMessage)
@@ -461,7 +497,7 @@ function App() {
       wv.removeEventListener('did-navigate-in-page', onDidNavigate)
       wv.removeEventListener('dom-ready', onDomReady)
     }
-  }, [pageState, addLog])
+  }, [pageState, preloadPath, addLog])
 
   // ===== 设置保存后的回调 =====
   const handleSettingsSaved = (saved: AppConfig) => {
@@ -534,7 +570,7 @@ function App() {
                     : 'bg-blue-50 text-blue-600 border-blue-200'
                 )}
               >
-                {envMode === 'test' ? 'TEST (test)' : 'MAIN (info)'}
+                {envMode === 'test' ? 'TEST (test)' : 'MAIN (live)'}
               </span>
             </div>
           </div>
@@ -573,7 +609,7 @@ function App() {
                 ? 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
                 : 'text-slate-500 hover:text-slate-800'
             )}
-            title="正式环境 (main 分支项目: https://module.qqlink.info)"
+            title="正式环境 (新版 H5: https://module.qqlink.live)"
           >
             <span
               className={cn(
@@ -908,19 +944,26 @@ function App() {
 
                       {/* 2. WebView 真实网页区域 (在 SafeArea 保护下，顶部标题栏《指数》具有完整的呼吸空间) */}
                       <div className="flex-1 w-full min-h-0 relative overflow-hidden bg-white">
+                        {preloadPath && url && !isBlankUrl(url) ? (
                         <webview
+                          key={preloadPath}
                           ref={webviewRef as never}
-                          src={url || undefined}
-                          preload={`file://${preloadPathRef.current}`}
+                          src={withAppChannel(url)}
+                          preload={`file://${preloadPath}`}
                           useragent={userAgent}
                           allowpopups={"true" as unknown as boolean}
-                          webpreferences="contextIsolation=yes,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
+                          webpreferences="contextIsolation=no,nodeIntegration=no,webSecurity=no,allowRunningInsecureContent=yes"
                           className="h-full w-full"
                           style={{
                             width: device.width,
                             height: useSafeArea ? device.height - 47 - 18 : device.height
                           }}
                         />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs text-slate-400">
+                            正在准备 WebView 桥接…
+                          </div>
+                        )}
 
                         {/* 页面加载进度条 */}
                         {isLoading && (

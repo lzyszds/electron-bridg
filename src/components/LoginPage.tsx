@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Settings } from 'lucide-react'
 import { SettingsDialog, type AppConfig } from './SettingsDialog'
 import SecurityVerifyDialog, { parseEmailFromErrDlt } from './SecurityVerifyDialog'
-import { ENV_MODES, type EnvMode } from '../config/modules'
+import { ENV_MODES, envPresetPatch, type EnvMode } from '../config/modules'
 import { cn } from '../lib/utils'
 
 interface LoginPageProps {
@@ -70,6 +70,9 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
     setAccount(storedAccount || (mode === 'test' ? '' : 'lzyszds@qq.com'))
     setRememberMe(remember)
     setPassword(storedPassword || (mode === 'test' ? '' : 'Aa395878870'))
+
+    // 登录页切环境时立刻写回主进程，否则 getNodeConfig 仍会按磁盘上的旧 envMode 返回 buzz
+    void window.appConfig?.setConfig(envPresetPatch(mode))
   }
 
   useEffect(() => {

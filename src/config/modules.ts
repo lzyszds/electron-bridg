@@ -349,7 +349,7 @@ export const H5_MODULES: H5Module[] = [
  * 常用环境预设
  */
 export const BASE_URL_PRESETS = [
-  { label: '正式环境 (main 分支)', value: 'https://module.qqlink.info' },
+  { label: '正式环境 (module.qqlink.live)', value: 'https://module.qqlink.live' },
   { label: '测试环境 (test 分支 SPA)', value: 'https://module.qqlink.buzz' },
   { label: '本地 Nuxt 开发', value: 'http://localhost:3000' }
 ]
@@ -373,10 +373,10 @@ export const ENV_MODES: Record<EnvMode, EnvPresetItem> = {
     label: '正式环境 (main)',
     shortLabel: '正式',
     tag: 'MAIN',
-    h5BaseUrl: 'https://module.qqlink.info',
+    h5BaseUrl: 'https://module.qqlink.live',
     walletUrl: 'https://api.qqlink.live',
     apiBaseUrl: 'https://chat.qqlink.live/chat',
-    desc: '主分支正式环境，使用原生/H5混合鉴权'
+    desc: '正式环境新版 H5，走宿主 proxy 鉴权与签名'
   },
   test: {
     mode: 'test',
@@ -399,13 +399,16 @@ export function buildModuleUrl(
   locale: string = 'zh-hans',
   withDebugParams: boolean = true
 ): string {
-  const cleanBase = (baseUrl || 'https://module.qqlink.info').replace(/\/+$/, '')
+  const cleanBase = (baseUrl || 'https://module.qqlink.live').replace(/\/+$/, '')
   const cleanPath = path.startsWith('/') ? path : `/${path}`
   const prefix = locale ? `/${locale}` : ''
   const fullUrlStr = `${cleanBase}${prefix}${cleanPath}`
 
   try {
     const url = new URL(fullUrlStr)
+    if (!url.searchParams.has('channel')) {
+      url.searchParams.set('channel', 'qqlink')
+    }
     if (withDebugParams) {
       if (!url.searchParams.has('safeArea')) {
         url.searchParams.set('safeArea', '50')
@@ -417,8 +420,58 @@ export function buildModuleUrl(
     return url.toString()
   } catch {
     // 降级返回
-    const qs = withDebugParams ? '?safeArea=50&vconsole=yes' : ''
+    const qs = withDebugParams ? '?channel=qqlink&safeArea=50&vconsole=yes' : '?channel=qqlink'
     return `${fullUrlStr}${qs}`
+  }
+}
+
+/** 是否为空白页 / 未完成导航地址（绝不能写回 url state，否则会被拼上 channel 死循环） */
+export function isBlankUrl(urlStr: string): boolean {
+  if (!urlStr) return true
+  const lower = urlStr.toLowerCase()
+  return lower === 'about:blank' || lower.startsWith('about:')
+}
+
+/** 补齐 App 渠道参数，让线上 H5 在桥注入前也走 shouldUseNativeProxy */
+export function withAppChannel(urlStr: string): string {
+  if (isBlankUrl(urlStr)) return urlStr
+  try {
+    const url = new URL(urlStr)
+    if (!url.searchParams.has('channel')) {
+      url.searchParams.set('channel', 'qqlink')
+    }
+    return url.toString()
+  } catch {
+    return urlStr
+  }
+}
+
+/** 判断 URL 是否属于当前环境（跨环境的上次地址不能复用） */
+export function isUrlForEnv(urlStr: string, mode: EnvMode): boolean {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase()
+    if (host === 'localhost' || host === '127.0.0.1') return true
+    if (mode === 'test') return host.endsWith('qqlink.buzz')
+    // 正式环境只用新版 module.qqlink.live；.info 是旧 H5，不再视为当前环境
+    return host === 'module.qqlink.live' || host.endsWith('.qqlink.live')
+  } catch {
+    return false
+  }
+}
+
+/** 把当前环境的 H5 / 钱包 / Chat 地址一并写入主进程，避免 getNodeConfig 仍读旧环境 */
+export function envPresetPatch(mode: EnvMode): {
+  envMode: EnvMode
+  h5BaseUrl: string
+  walletUrl: string
+  apiBaseUrl: string
+} {
+  const preset = ENV_MODES[mode]
+  return {
+    envMode: mode,
+    h5BaseUrl: preset.h5BaseUrl,
+    walletUrl: preset.walletUrl,
+    apiBaseUrl: preset.apiBaseUrl
   }
 }
 

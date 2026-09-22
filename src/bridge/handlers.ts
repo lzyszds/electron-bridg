@@ -268,10 +268,35 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     return false
   })
 
+  const navigateH5Path = (path: string) => {
+    const wv = getWebview()
+    const current = wv?.getURL?.() || ''
+    try {
+      const u = new URL(current)
+      const locale = u.pathname.match(/^\/([^/]+)\//)?.[1] || 'zh-hans'
+      const next = new URL(`/${locale}${path.startsWith('/') ? path : `/${path}`}`, u.origin)
+      if (u.searchParams.has('safeArea')) {
+        next.searchParams.set('safeArea', u.searchParams.get('safeArea') || '50')
+      }
+      if (u.searchParams.has('vconsole')) {
+        next.searchParams.set('vconsole', u.searchParams.get('vconsole') || 'yes')
+      }
+      const target = next.toString()
+      log(`[navigate] ${path} -> ${target}`)
+      wv?.loadURL(target)
+      return true
+    } catch (err) {
+      log(`[navigate] 无法跳转 ${path}`, err)
+      return false
+    }
+  }
+
   // 以下能力依赖 Flutter 内部路由/原生库，统一 mock
   mock('toScan')
   mock('toKeepBit')
-  mock('toUsStocks')
+  bridge.registerHandler('toUsStocks', async () => {
+    return navigateH5Path('/financial/usStocks')
+  })
   mock('toQuickCash')
   mock('startWs')
   mock('toVipAddress')

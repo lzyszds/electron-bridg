@@ -20,7 +20,7 @@ export const ENV_PRESETS: Record<EnvMode, EnvPreset> = {
     mode: 'prod',
     label: '正式环境 (main)',
     tag: 'PROD',
-    h5BaseUrl: 'https://module.qqlink.info',
+    h5BaseUrl: 'https://module.qqlink.live',
     walletUrl: 'https://api.qqlink.live',
     apiBaseUrl: 'https://chat.qqlink.live/chat',
     nodeConfigUrl: 'https://qqlink.obs.ap-southeast-3.myhuaweicloud.com/configQQLink.txt',
@@ -41,7 +41,7 @@ export const ENV_PRESETS: Record<EnvMode, EnvPreset> = {
 export interface AppConfig {
   /** 运行环境模式：prod 正式环境 (main) | test 测试环境全桥接 (test) */
   envMode: EnvMode
-  /** H5 镜像基础域名（如 https://module.qqlink.info 或 https://module.qqlink.buzz 或 http://localhost:3000） */
+  /** H5 镜像基础域名（如 https://module.qqlink.live 或 https://module.qqlink.buzz 或 http://localhost:3000） */
   h5BaseUrl: string
   /** 默认/最后访问的完整 URL */
   webviewUrl: string
@@ -64,8 +64,8 @@ export interface AppConfig {
 
 export const DEFAULT_CONFIG: AppConfig = {
   envMode: 'prod',
-  h5BaseUrl: 'https://module.qqlink.info',
-  webviewUrl: 'https://module.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
+  h5BaseUrl: 'https://module.qqlink.live',
+  webviewUrl: 'https://module.qqlink.live/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
   lastModuleId: 'financial-usStocks',
   locale: 'zh-hans',
   withDebugParams: true,
@@ -87,6 +87,10 @@ function getPath(): string {
   return configPath
 }
 
+function migrateLegacyH5Host(value: string): string {
+  return value.replace(/module\.qqlink\.info/gi, 'module.qqlink.live')
+}
+
 function merge(base: AppConfig, patch: Partial<AppConfig>): AppConfig {
   const envMode = patch.envMode ?? base.envMode ?? 'prod'
   const preset = ENV_PRESETS[envMode] || ENV_PRESETS.prod
@@ -97,10 +101,13 @@ function merge(base: AppConfig, patch: Partial<AppConfig>): AppConfig {
   const defaultWallet = isModeChanged ? preset.walletUrl : (base.walletUrl ?? preset.walletUrl)
   const defaultApi = isModeChanged ? preset.apiBaseUrl : (base.apiBaseUrl ?? preset.apiBaseUrl)
 
+  const h5BaseUrl = migrateLegacyH5Host(patch.h5BaseUrl ?? defaultH5Base)
+  const webviewUrl = migrateLegacyH5Host(patch.webviewUrl ?? base.webviewUrl)
+
   return {
     envMode,
-    h5BaseUrl: patch.h5BaseUrl ?? defaultH5Base,
-    webviewUrl: patch.webviewUrl ?? base.webviewUrl,
+    h5BaseUrl,
+    webviewUrl,
     lastModuleId: patch.lastModuleId ?? base.lastModuleId ?? 'financial-usStocks',
     locale: patch.locale ?? base.locale ?? 'zh-hans',
     withDebugParams: patch.withDebugParams ?? base.withDebugParams ?? true,
@@ -116,6 +123,11 @@ export function loadConfig(): AppConfig {
     if (existsSync(getPath())) {
       const raw = JSON.parse(readFileSync(getPath(), 'utf-8'))
       cached = merge(DEFAULT_CONFIG, raw)
+      if (cached.h5BaseUrl !== raw.h5BaseUrl || cached.webviewUrl !== raw.webviewUrl) {
+        try {
+          writeFileSync(getPath(), JSON.stringify(cached, null, 2))
+        } catch {}
+      }
     } else {
       cached = { ...DEFAULT_CONFIG }
     }

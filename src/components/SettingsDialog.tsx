@@ -31,6 +31,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
   const [activeTab, setActiveTab] = useState<'h5' | 'server' | 'bridge'>('h5')
   const [cfg, setCfg] = useState<AppConfig | null>(null)
   const [saving, setSaving] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
 
   // 桥接 store 配置
   const bridgeConfig = useBridgeStore()
@@ -41,8 +42,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     window.appConfig?.getConfig().then((c) => {
       setCfg({
         envMode: c.envMode || 'prod',
-        h5BaseUrl: c.h5BaseUrl || 'https://module.qqlink.info',
-        webviewUrl: c.webviewUrl || 'https://module.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
+        h5BaseUrl: c.h5BaseUrl || 'https://module.qqlink.live',
+        webviewUrl: c.webviewUrl || 'https://module.qqlink.live/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
         lastModuleId: c.lastModuleId || 'financial-usStocks',
         locale: c.locale || 'zh-hans',
         withDebugParams: c.withDebugParams ?? true,
@@ -110,8 +111,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     if (!confirm('确定要恢复默认设置吗？')) return
     const defaultCfg: AppConfig = {
       envMode: 'prod',
-      h5BaseUrl: 'https://module.qqlink.info',
-      webviewUrl: 'https://module.qqlink.info/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
+      h5BaseUrl: 'https://module.qqlink.live',
+      webviewUrl: 'https://module.qqlink.live/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
       lastModuleId: 'financial-usStocks',
       locale: 'zh-hans',
       withDebugParams: true,
@@ -126,7 +127,6 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     bridgeConfig.reset()
   }
 
-  const [copiedField, setCopiedField] = useState<string | null>(null)
   const handleCopyField = (key: string, val: string) => {
     if (!val) return
     navigator.clipboard.writeText(val)
@@ -227,7 +227,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                 <div className="grid grid-cols-2 gap-3">
                   <div
                     onClick={() => {
-                      const nextBase = 'https://module.qqlink.info'
+                      const nextBase = 'https://module.qqlink.live'
                       const selectedMod = H5_MODULES.find((m) => m.id === cfg.lastModuleId) || H5_MODULES[0]
                       const nextUrl = buildModuleUrl(nextBase, selectedMod.path, cfg.locale, cfg.withDebugParams)
                       setCfg({
@@ -251,11 +251,11 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                         <span>🚀 正式环境 (main)</span>
                       </span>
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                        .info
+                        .live
                       </span>
                     </div>
                     <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                      https://module.qqlink.info
+                      https://module.qqlink.live
                     </span>
                   </div>
 
@@ -324,7 +324,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-xs font-mono text-zinc-800 dark:text-zinc-200"
                   value={cfg.h5BaseUrl}
                   onChange={(e) => updateBaseUrl(e.target.value)}
-                  placeholder="https://module.qqlink.info"
+                    placeholder="https://module.qqlink.live"
                 />
               </div>
 

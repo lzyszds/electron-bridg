@@ -1,35 +1,34 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { webviewBridgeSdk, webviewPolyfills } from '../../src/bridge/sdk'
 
 /**
- * WebView preload
- *
- * 在 H5 镜像页面的主世界暴露 `window.FlutterWebView.postMessage`，
- * 将 JS 侧发出的桥接消息转发给宿主的 <webview> 标签（ipc-message 事件）。
- *
- * 还原 Flutter webview_flutter 中 addJavaScriptChannel('FlutterWebView') 的行为。
+ * WebView preload：必须在 H5 任意脚本之前挂上桥。
+ * 若等到 dom-ready 再 executeJavaScript，线上 H5 已走 axios，
+ * secretKey 为空 → HMAC 失败 → 美股接口 code 50。
  */
+const flutterWebView = {
+  postMessage: (message: string) => {
+    ipcRenderer.sendToHost('bridge-message', message)
+  }
+}
+
 try {
-  if (contextBridge && typeof contextBridge.exposeInMainWorld === 'function') {
-    contextBridge.exposeInMainWorld('FlutterWebView', {
-      postMessage: (message: string) => {
-        ipcRenderer.sendToHost('bridge-message', message)
-      }
-    })
-  } else {
-    ;(window as any).FlutterWebView = {
-      postMessage: (message: string) => {
-        ipcRenderer.sendToHost('bridge-message', message)
-      }
-    }
+  const w = window as unknown as {
+    FlutterWebView?: typeof flutterWebView
+    __QQLINK_WEBVIEW__?: boolean
+  }
+  w.FlutterWebView = flutterWebView
+  w.__QQLINK_WEBVIEW__ = true
+  ;(0, eval)(`${webviewPolyfills}\n${webviewBridgeSdk}`)
+} catch (err) {
+  console.warn('[bridge-preload] 主世界注入失败，尝试 contextBridge:', err)
+}
+
+try {
+  if (typeof contextBridge?.exposeInMainWorld === 'function') {
+    contextBridge.exposeInMainWorld('FlutterWebView', flutterWebView)
+    contextBridge.exposeInMainWorld('__QQLINK_WEBVIEW__', true)
   }
 } catch {
-  try {
-    ;(window as any).FlutterWebView = {
-      postMessage: (message: string) => {
-        ipcRenderer.sendToHost('bridge-message', message)
-      }
-    }
-  } catch {
-    // 忽略
-  }
+  // contextIsolation=no 时 expose 会失败，上面已直接写 window
 }
