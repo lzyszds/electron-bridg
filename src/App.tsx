@@ -117,6 +117,10 @@ function App() {
         useBridgeStore.getState().setAuth('imToken', tokens.kbitToken)
         useBridgeStore.getState().setAuth('chatToken', tokens.chatToken)
         useBridgeStore.getState().setAuth('userID', uid)
+        // 登录/自动登录拿到的是最新凭据：立刻归档到该环境名下，
+        // 后续本地开关、环境切换都从这里取，避免用到上一套旧 token
+        const archiveKey = mode === 'local' ? localStorage.getItem(LOCAL_BACKEND_KEY) || 'test' : mode
+        useBridgeStore.getState().setAuthForEnv(archiveKey, useBridgeStore.getState().auth)
         addLog({
           source: 'system',
           level: 'system',
@@ -213,18 +217,19 @@ function App() {
    * 正式 / 测试各存一套，切过去时直接取出来用；本地模式归到它选择的后端名下，
    * 这样本地与对应的线上环境共享同一套账号。
    */
-  const archiveCurrentAuth = useCallback(() => {
-    const env = localStorage.getItem('qqlink_env_mode') || 'prod'
+  const archiveCurrentAuth = useCallback((env?: string) => {
+    const current = env || envMode
+    const key = current === 'local' ? localStorage.getItem(LOCAL_BACKEND_KEY) || 'test' : current
     const auth = useBridgeStore.getState().auth
     if (auth.userID || auth.token) {
-      useBridgeStore.getState().setAuthForEnv(env, auth)
+      useBridgeStore.getState().setAuthForEnv(key, auth)
     }
-  }, [])
+  }, [envMode])
 
   /** 从指定环境的归档里恢复凭据；没有可用凭据返回 false */
   const restoreAuthFor = useCallback((env: string): boolean => {
     const saved = useBridgeStore.getState().getAuthForEnv(env)
-    if (!saved || !saved.userID) return false
+    if (!saved || !saved.userID || !saved.token) return false
     const store = useBridgeStore.getState()
     ;(['token', 'secretKey', 'imToken', 'chatToken', 'userID'] as const).forEach((k) => {
       store.setAuth(k, saved[k])
@@ -255,17 +260,16 @@ function App() {
   /**
    * 本地开关（开 / 关共用）
    *
-   * 开：H5 指向 localhost，后端沿用最近一次使用的正式/测试环境，并复用该环境已保存的登录态；
-   * 关：回到打开本地之前的那个线上环境，同样复用它的登录态。
-   * 两边都不弹窗、不强制重新登录。
+   * 本地模式**不改动任何 token / 凭据**：主进程的 auth_<env>.json 与 authByEnv 都保持原样，
+   * 本地 H5 直接复用「开关前所选环境」的账号与接口配置，切来切去不会触发重新登录。
+   * 只有关掉本地时，才把环境配置切回那个线上环境。
    */
   const handleToggleLocalMode = useCallback(async () => {
     const savedBackend = localStorage.getItem(LOCAL_BACKEND_KEY)
     const backend: 'prod' | 'test' = savedBackend === 'prod' ? 'prod' : 'test'
 
     if (envMode !== 'local') {
-      archiveCurrentAuth()
-      // 关闭时回到的就是当前所在的线上环境
+      // 打开本地：记住当前线上环境（就是本地要用的后端），随后只换 H5 来源
       const currentBackend: 'prod' | 'test' = envMode === 'test' ? 'test' : 'prod'
       localStorage.setItem(LOCAL_BACKEND_KEY, currentBackend)
       setLocalBackend(currentBackend)
@@ -276,6 +280,7 @@ function App() {
       const backPreset = ENV_MODES[currentBackend]
       setCurrentBaseUrl(preset.h5BaseUrl)
       try {
+        // 后端接口与 wallet 地址直接沿用所选线上环境，不读取/覆盖凭据
         await window.appConfig?.setConfig({
           envMode: 'local',
           h5BaseUrl: preset.h5BaseUrl,
@@ -285,17 +290,14 @@ function App() {
       } catch {
         // 忽略
       }
-      const restored = restoreAuthFor(currentBackend)
       await navigateToEnvModule(
         preset.h5BaseUrl,
-        restored
-          ? `本地模式已开启：H5 → ${preset.h5BaseUrl}，后端沿用【${backPreset.label}】，复用其登录态`
-          : `本地模式已开启：H5 → ${preset.h5BaseUrl}，后端【${backPreset.label}】暂无登录态，请登录一次`
+        `本地模式已开启：H5 → ${preset.h5BaseUrl}，后端沿用【${backPreset.label}】，登录态与凭据保持不变`
       )
       return
     }
 
-    // 关闭本地：回到 BACKEND 对应的线上环境
+    // 关闭本地：环境配置切回所选线上环境，同样不动 token
     const preset = ENV_MODES[backend]
     setEnvMode(backend)
     localStorage.setItem('qqlink_env_mode', backend)
@@ -310,14 +312,11 @@ function App() {
     } catch {
       // 忽略
     }
-    const restored = restoreAuthFor(backend)
     await navigateToEnvModule(
       preset.h5BaseUrl,
-      restored
-        ? `本地模式已关闭：回到【${preset.label}】，复用其登录态`
-        : `本地模式已关闭：回到【${preset.label}】，该环境暂无登录态，请登录一次`
+      `本地模式已关闭：回到【${preset.label}】，登录态与凭据保持不变`
     )
-  }, [envMode, archiveCurrentAuth, restoreAuthFor, navigateToEnvModule])
+  }, [envMode, navigateToEnvModule])
 
   // 本地后端展示值跟随 localStorage
   useEffect(() => {
@@ -356,18 +355,32 @@ function App() {
       // 忽略
     }
 
-    // 2. 清理当前内存中的鉴权凭证
+    // 2. 归档当前环境的凭据，再尝试恢复目标环境已保存的那一套
+    archiveCurrentAuth()
     useBridgeStore.getState().clearAuth()
+    const restored = restoreAuthFor(targetMode)
 
+    if (restored) {
+      // 目标环境有完整凭据：重新从主进程读一次 token 注入桥接，直接进主页
+      const info = await window.auth?.getAuthInfo(targetMode)
+      await syncTokensAndEnterMain(info?.userID || '', targetMode)
+      addLog({
+        source: 'system',
+        level: 'system',
+        message: `已切换至【${preset.label}】，复用该环境已保存的登录态，无需重新登录`
+      })
+      return
+    }
+
+    // 目标环境没有可用凭据：留在登录页，等用户登录这个环境
+    localStorage.setItem(LOGGED_OUT_KEY, targetMode)
     addLog({
       source: 'system',
       level: 'system',
-      message: `已切换至【${preset.label}】。因两个环境账号体系独立不互通，已强制退出至登录页，请登录该环境账号。`
+      message: `已切换至【${preset.label}】。该环境暂无登录态，请登录该环境账号。`
     })
-
-    // 3. 强制退回登录页
     setPageState('login')
-  }, [pendingEnvMode, addLog])
+  }, [pendingEnvMode, addLog, archiveCurrentAuth, restoreAuthFor, syncTokensAndEnterMain])
 
   // ===== 启动时检查本地是否存储着有效 Token =====
   useEffect(() => {
