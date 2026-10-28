@@ -7,7 +7,7 @@ import { cn } from '../lib/utils'
 import { Settings, Globe, Server, ShieldCheck, X, Copy, Check } from 'lucide-react'
 
 export interface AppConfig {
-  envMode?: 'prod' | 'test'
+  envMode?: 'prod' | 'test' | 'local'
   h5BaseUrl: string
   webviewUrl: string
   lastModuleId?: string

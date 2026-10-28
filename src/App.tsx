@@ -552,52 +552,8 @@ function App() {
           1. 全局顶部统领栏 (Apple Light Studio Header)
       ======================================================== */}
       <header className="w-full shrink-0 z-30 bg-white border-b border-slate-200 shadow-xs">
-        {/* ─────────── 第一行：主控行（环境 / 导航 / 地址栏 / 账号） ─────────── */}
+        {/* ─────────── 第一行：主控行（导航 / 地址栏 / 账号） ─────────── */}
         <div className="h-12 w-full flex items-center gap-3 px-4 border-b border-slate-100">
-          {/* 双模式切换胶囊开关 (正式环境 main vs 测试环境 test SPA 全桥接) */}
-          <div className="flex items-center rounded-lg bg-slate-100/90 p-0.5 border border-slate-200 shrink-0">
-            <button
-              type="button"
-              onClick={() => handleRequestSwitchEnvMode('prod')}
-              className={cn(
-                'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
-                envMode === 'prod'
-                  ? 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              )}
-              title="正式环境 (新版 H5: https://module.qqlink.live)"
-            >
-              <span
-                className={cn(
-                  'w-1.5 h-1.5 rounded-full',
-                  envMode === 'prod' ? 'bg-blue-500' : 'bg-slate-300'
-                )}
-              />
-              <span>正式 (main)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRequestSwitchEnvMode('test')}
-              className={cn(
-                'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
-                envMode === 'test'
-                  ? 'bg-white text-purple-600 shadow-xs border border-purple-200 font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              )}
-              title="测试环境 (test 分支 SPA 全桥接: https://module.qqlink.buzz)"
-            >
-              <span
-                className={cn(
-                  'w-1.5 h-1.5 rounded-full',
-                  envMode === 'test' ? 'bg-purple-500' : 'bg-slate-300'
-                )}
-              />
-              <span>测试 (test)</span>
-            </button>
-          </div>
-
-          {/* 垂直分割线 */}
-          <div className="h-4 w-px bg-slate-200 shrink-0" />
 
           {/* 地址栏区块：历史导航按钮 + 一体化 Omnibar（独占全部剩余宽度，永不挤压） */}
           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -696,6 +652,49 @@ function App() {
 
         {/* ─────────── 第二行：上下文与开发者工具行 ─────────── */}
         <div className="h-10 w-full flex items-center gap-2 px-4 bg-slate-50/70">
+          {/* 环境切换胶囊开关 (正式 main / 测试 test / 本地 local) */}
+          <div className="flex items-center rounded-lg bg-slate-100/90 p-0.5 border border-slate-200 shrink-0">
+            {(Object.keys(ENV_MODES) as EnvMode[]).map((mode) => {
+              const preset = ENV_MODES[mode]
+              const active = envMode === mode
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => handleRequestSwitchEnvMode(mode)}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
+                    active
+                      ? mode === 'test'
+                        ? 'bg-white text-purple-600 shadow-xs border border-purple-200 font-bold'
+                        : mode === 'local'
+                          ? 'bg-white text-emerald-600 shadow-xs border border-emerald-200 font-bold'
+                          : 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  )}
+                  title={`${preset.label} — ${preset.h5BaseUrl}`}
+                >
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full',
+                      active
+                        ? mode === 'test'
+                          ? 'bg-purple-500'
+                          : mode === 'local'
+                            ? 'bg-emerald-500'
+                            : 'bg-blue-500'
+                        : 'bg-slate-300'
+                    )}
+                  />
+                  <span>{preset.shortLabel}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 垂直分割线 */}
+          <div className="h-4 w-px bg-slate-200 shrink-0" />
+
           {/* 快捷模块分类下拉列表 (使用组件库 Select 下拉组件) */}
           <Select
             value={currentModuleId}

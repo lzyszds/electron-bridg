@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 
-export type EnvMode = 'prod' | 'test'
+export type EnvMode = 'prod' | 'test' | 'local'
 
 export interface EnvPreset {
   mode: EnvMode
@@ -35,11 +35,22 @@ export const ENV_PRESETS: Record<EnvMode, EnvPreset> = {
     apiBaseUrl: 'https://chat.qqlink.buzz/chat',
     nodeConfigUrl: 'https://qqlink.obs.ap-southeast-3.myhuaweicloud.com/configQQLinkTest.txt',
     nodeConfigContent: 'qqlink.buzz,qqlink.buzz'
+  },
+  local: {
+    mode: 'local',
+    // 本地开发：H5 起在 8888，接口仍走测试环境（本地一般不提供钱包/Chat 服务）
+    label: '本地开发 (local)',
+    tag: 'LOCAL',
+    h5BaseUrl: 'http://localhost:8888',
+    walletUrl: 'https://api.qqlink.buzz',
+    apiBaseUrl: 'https://chat.qqlink.buzz/chat',
+    nodeConfigUrl: 'https://qqlink.obs.ap-southeast-3.myhuaweicloud.com/configQQLinkTest.txt',
+    nodeConfigContent: 'qqlink.buzz,qqlink.buzz'
   }
 }
 
 export interface AppConfig {
-  /** 运行环境模式：prod 正式环境 (main) | test 测试环境全桥接 (test) */
+  /** 运行环境模式：prod 正式环境 | test 测试环境全桥接 | local 本地开发 */
   envMode: EnvMode
   /** H5 镜像基础域名（如 https://module.qqlink.live 或 https://module.qqlink.buzz 或 http://localhost:3000） */
   h5BaseUrl: string
@@ -55,6 +66,10 @@ export interface AppConfig {
   apiBaseUrl: string
   /** 钱包接口服务器地址（发送邮箱验证码等） */
   walletUrl: string
+  /** 美股行情公共 WS 地址（私有地址由它推导为 /private） */
+  usStockWsUrl: string
+  /** 私有 WS 接入方标识（由 KeepBit 分配） */
+  usStockWsApiKey: string
   /** HTTP/HTTPS 代理 */
   proxy: {
     enabled: boolean
@@ -71,6 +86,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   withDebugParams: true,
   apiBaseUrl: 'https://chat.qqlink.live/chat',
   walletUrl: 'https://api.qqlink.live',
+  usStockWsUrl: 'wss://ws.keepbit.com/v2/ws/public',
+  usStockWsApiKey: 'kbappSys',
   proxy: {
     enabled: true,
     url: 'http://127.0.0.1:7890'
@@ -113,6 +130,8 @@ function merge(base: AppConfig, patch: Partial<AppConfig>): AppConfig {
     withDebugParams: patch.withDebugParams ?? base.withDebugParams ?? true,
     apiBaseUrl: patch.apiBaseUrl ?? defaultApi,
     walletUrl: patch.walletUrl ?? defaultWallet,
+    usStockWsUrl: patch.usStockWsUrl ?? base.usStockWsUrl ?? DEFAULT_CONFIG.usStockWsUrl,
+    usStockWsApiKey: patch.usStockWsApiKey ?? base.usStockWsApiKey ?? DEFAULT_CONFIG.usStockWsApiKey,
     proxy: { ...base.proxy, ...patch.proxy }
   }
 }

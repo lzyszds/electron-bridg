@@ -180,10 +180,10 @@ export const H5_MODULES: H5Module[] = [
 export const BASE_URL_PRESETS = [
   { label: '正式环境 (module.qqlink.live)', value: 'https://module.qqlink.live' },
   { label: '测试环境 (test 分支 SPA)', value: 'https://module.qqlink.buzz' },
-  { label: '本地 Nuxt 开发', value: 'http://localhost:3000' }
+  { label: '本地 Vite 开发', value: 'http://localhost:8888' }
 ]
 
-export type EnvMode = 'prod' | 'test'
+export type EnvMode = 'prod' | 'test' | 'local'
 
 export interface EnvPresetItem {
   mode: EnvMode
@@ -216,6 +216,17 @@ export const ENV_MODES: Record<EnvMode, EnvPresetItem> = {
     walletUrl: 'https://api.qqlink.buzz',
     apiBaseUrl: 'https://chat.qqlink.buzz/chat',
     desc: '全新 SPA 架构，全方面接口代理桥接 (Proxy / NodeConfig / Ws)'
+  },
+  local: {
+    mode: 'local',
+    label: '本地开发 (local)',
+    shortLabel: '本地',
+    tag: 'LOCAL',
+    h5BaseUrl: 'http://localhost:8888',
+    // 本地只跑 H5，接口仍指向测试环境，避免本地没有钱包/Chat 服务
+    walletUrl: 'https://api.qqlink.buzz',
+    apiBaseUrl: 'https://chat.qqlink.buzz/chat',
+    desc: '本地 Vite 起的 H5（localhost:8888），接口仍走测试环境'
   }
 }
 
@@ -284,7 +295,9 @@ export function withAppChannel(urlStr: string): string {
 export function isUrlForEnv(urlStr: string, mode: EnvMode): boolean {
   try {
     const host = new URL(urlStr).hostname.toLowerCase()
-    if (host === 'localhost' || host === '127.0.0.1') return true
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1'
+    if (mode === 'local') return isLocalHost
+    if (isLocalHost) return false
     if (mode === 'test') return host.endsWith('qqlink.buzz')
     // 正式环境只用新版 module.qqlink.live；.info 是旧 H5，不再视为当前环境
     return host === 'module.qqlink.live' || host.endsWith('.qqlink.live')

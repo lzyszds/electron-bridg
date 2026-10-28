@@ -10,6 +10,8 @@ interface AuthApi {
     errMsg?: string
     errCode?: number
     errDlt?: string
+    /** errCode 为 20016 时服务端要求的安全验证 */
+    verify?: { email: string; verifiys: string[] }
   }>
   sendEmailCode: (params: { email: string; codeType: number }, env?: string) => Promise<{ success: boolean; errMsg?: string }>
   getToken: (env?: string) => Promise<string>
@@ -43,7 +45,7 @@ interface ConfigApi {
 }
 
 interface AppConfig {
-  envMode?: 'prod' | 'test'
+  envMode?: 'prod' | 'test' | 'local'
   webviewUrl: string
   apiBaseUrl: string
   walletUrl: string
