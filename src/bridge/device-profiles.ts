@@ -1,3 +1,5 @@
+export type DevicePlatform = 'android' | 'ios'
+
 export interface DeviceProfile {
   id: string
   name: string
@@ -5,6 +7,8 @@ export interface DeviceProfile {
   width: number
   height: number
   deviceScaleFactor?: number
+  /** 该机型默认归属平台，用于 getInitData / 导航兜底 */
+  platform: DevicePlatform
 }
 
 export const DEVICE_PROFILES: DeviceProfile[] = [
@@ -15,7 +19,8 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1',
     width: 402,
     height: 874,
-    deviceScaleFactor: 3
+    deviceScaleFactor: 3,
+    platform: 'ios'
   },
   {
     id: 'iphone-17',
@@ -24,7 +29,8 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1',
     width: 393,
     height: 852,
-    deviceScaleFactor: 3
+    deviceScaleFactor: 3,
+    platform: 'ios'
   },
   {
     id: 'iphone-17-pro-max',
@@ -33,7 +39,8 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1',
     width: 440,
     height: 956,
-    deviceScaleFactor: 3
+    deviceScaleFactor: 3,
+    platform: 'ios'
   },
   {
     id: 'iphone-15-pro',
@@ -42,7 +49,8 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
     width: 393,
     height: 852,
-    deviceScaleFactor: 3
+    deviceScaleFactor: 3,
+    platform: 'ios'
   },
   {
     id: 'pixel-8-pro',
@@ -51,7 +59,8 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
       'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
     width: 412,
     height: 915,
-    deviceScaleFactor: 2.625
+    deviceScaleFactor: 2.625,
+    platform: 'android'
   },
   {
     id: 'iphone-se',
@@ -60,7 +69,8 @@ export const DEVICE_PROFILES: DeviceProfile[] = [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
     width: 375,
     height: 667,
-    deviceScaleFactor: 2
+    deviceScaleFactor: 2,
+    platform: 'ios'
   }
 ]
 

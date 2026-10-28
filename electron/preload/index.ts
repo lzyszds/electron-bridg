@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { STORE_CHANNELS, type ElectronStoreApi } from '../shared/types'
+import type { WsMessageEvent, WsStatusEvent } from '../shared/ws'
+
+// 只做 type import，避免 shared/ws 运行时常量被拆进 preload 的 chunks/ 共享包
+const WS_CHANNELS = {
+  MESSAGE: 'usstock-ws:message',
+  STATUS: 'usstock-ws:status',
+  GET_STATUS: 'usstock-ws:get-status'
+} as const
 import {
   BRIDGE_CHANNELS,
   type BridgeApi,
@@ -28,6 +36,8 @@ interface LoginResult {
   errMsg?: string
   errCode?: number
   errDlt?: string
+  /** errCode 为 20016 时服务端要求的安全验证 */
+  verify?: { email: string; verifiys: string[] }
 }
 
 interface AuthInfo {
@@ -58,6 +68,8 @@ interface AppConfig {
   withDebugParams: boolean
   apiBaseUrl: string
   walletUrl: string
+  usStockWsUrl?: string
+  usStockWsApiKey?: string
   proxy: { enabled: boolean; url: string }
 }
 
@@ -108,6 +120,9 @@ const bridgeApi: BridgeApi = {
   getNodeConfig: () =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.GET_NODE_CONFIG),
 
+  refreshWalletSession: () =>
+    ipcRenderer.invoke(BRIDGE_CHANNELS.WALLET_SESSION_REFRESH),
+
   walletWs: (data: unknown) =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.WALLET_WS, data),
 
@@ -118,6 +133,24 @@ const bridgeApi: BridgeApi = {
       ipcRenderer.removeListener(BRIDGE_CHANNELS.WALLET_WS_MESSAGE, listener)
     }
   },
+
+  onUsStockWsMessage: (callback: (event: WsMessageEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WsMessageEvent) => callback(data)
+    ipcRenderer.on(WS_CHANNELS.MESSAGE, listener)
+    return () => {
+      ipcRenderer.removeListener(WS_CHANNELS.MESSAGE, listener)
+    }
+  },
+
+  onUsStockWsStatus: (callback: (event: WsStatusEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WsStatusEvent) => callback(data)
+    ipcRenderer.on(WS_CHANNELS.STATUS, listener)
+    return () => {
+      ipcRenderer.removeListener(WS_CHANNELS.STATUS, listener)
+    }
+  },
+
+  getUsStockWsStatus: () => ipcRenderer.invoke(WS_CHANNELS.GET_STATUS),
 
   toggleDevTools: (): void => {
     ipcRenderer.send('devtools:toggleMain')
@@ -174,8 +207,31 @@ const configApi = {
 }
 
 // ==================== 暴露到渲染进程 ====================
+// 必须在模块顶层直接执行：preload 只会被执行一次，导出函数不会被 Electron 调用。
+// 曾经把这里包进 export default 函数，导致 out/preload/index.cjs 只有导出、没有调用，
+// window.auth / bridge / electronStore / appConfig 全部缺失。
+// 文件末尾另有一个占位导出，让入口模块被视为"有导出"，防止被 Rollup 摇树清空。
+try {
+  contextBridge.exposeInMainWorld('electronStore', electronStoreApi)
+} catch (err) {
+  console.error('[preload] 暴露 electronStore 失败:', err)
+}
+try {
+  contextBridge.exposeInMainWorld('bridge', bridgeApi)
+} catch (err) {
+  console.error('[preload] 暴露 bridge 失败:', err)
+}
+try {
+  contextBridge.exposeInMainWorld('auth', authApi)
+} catch (err) {
+  console.error('[preload] 暴露 auth 失败:', err)
+}
+try {
+  contextBridge.exposeInMainWorld('appConfig', configApi)
+} catch (err) {
+  console.error('[preload] 暴露 appConfig 失败:', err)
+}
 
-contextBridge.exposeInMainWorld('electronStore', electronStoreApi)
-contextBridge.exposeInMainWorld('bridge', bridgeApi)
-contextBridge.exposeInMainWorld('auth', authApi)
-contextBridge.exposeInMainWorld('appConfig', configApi)
+// 占位导出（值为空对象，不参与任何逻辑），仅用于让入口模块被视为"有导出"
+export const PRELOAD_READY = true
+void PRELOAD_READY

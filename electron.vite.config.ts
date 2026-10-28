@@ -24,7 +24,10 @@ export default defineConfig({
         },
         output: {
           format: 'cjs',
-          entryFileNames: '[name].cjs'
+          entryFileNames: '[name].cjs',
+          // preload 被 Electron 以单文件 CJS 加载，多入口的共享模块不能拆到 chunks/，
+          // 否则 webview 会报 "module not found: ./chunks/xxx.cjs"
+          manualChunks: undefined
         }
       }
     }

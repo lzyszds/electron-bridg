@@ -17,7 +17,8 @@ import {
   HardDrive,
   Code2,
   Send,
-  CornerDownRight
+  CornerDownRight,
+  PlugZap
 } from 'lucide-react'
 import { useLogStore } from '../store/useLogStore'
 import type { LogEntry, LogSource, ElectronWirePayload } from '../bridge/types'
@@ -47,7 +48,8 @@ const sourceBadge: Record<LogSource, string> = {
   console: 'bg-slate-100 text-slate-600 border-slate-200',
   bridge: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   electron: 'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border-blue-300 font-bold',
-  system: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  system: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  ws: 'bg-cyan-50 text-cyan-700 border-cyan-200 font-bold'
 }
 
 function formatTime(ts: number): string {
@@ -528,8 +530,8 @@ function LogRow({ entry }: { entry: LogEntry }) {
           </span>
         )}
 
-        {/* 桥接方向与动作 */}
-        {entry.source === 'bridge' && entry.direction && (
+        {/* 桥接 / WS 方向与动作 */}
+        {(entry.source === 'bridge' || entry.source === 'ws') && entry.direction && (
           <span
             className={cn(
               'inline-flex items-center gap-0.5 shrink-0 font-bold text-[10px]',
@@ -613,7 +615,8 @@ export function LogPanel() {
       electron: logs.filter((l) => l.source === 'electron').length,
       console: logs.filter((l) => l.source === 'console').length,
       bridge: logs.filter((l) => l.source === 'bridge').length,
-      system: logs.filter((l) => l.source === 'system').length
+      system: logs.filter((l) => l.source === 'system').length,
+      ws: logs.filter((l) => l.source === 'ws').length
     }
   }, [logs])
 
@@ -640,6 +643,7 @@ export function LogPanel() {
   const tabs: { key: Filter; label: string; count: number; icon: React.ComponentType<{ className?: string }> }[] = [
     { key: 'all', label: '全部', count: counts.all, icon: ListFilter },
     { key: 'electron', label: 'Electron 完全体', count: counts.electron, icon: Layers },
+    { key: 'ws', label: 'WS 行情', count: counts.ws, icon: PlugZap },
     { key: 'bridge', label: '桥接 (H5)', count: counts.bridge, icon: Radio },
     { key: 'console', label: 'Console', count: counts.console, icon: Terminal },
     { key: 'system', label: '系统', count: counts.system, icon: Cpu }

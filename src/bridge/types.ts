@@ -16,7 +16,7 @@ export interface BridgeConfig {
   auth: AuthConfig
 }
 
-export type LogSource = 'console' | 'bridge' | 'electron' | 'system'
+export type LogSource = 'console' | 'bridge' | 'electron' | 'system' | 'ws'
 
 export type LogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug' | 'system'
 

@@ -1,9 +1,9 @@
 import { create } from 'zustand'
-import type { LogEntry, LogSource, LogLevel } from '../bridge/types'
+import type { LogEntry, LogSource, LogLevel, ElectronWirePayload } from '../bridge/types'
 
 const MAX_LOGS = 5000
 
-interface LogState {
+export interface LogState {
   logs: LogEntry[]
   addLog: (entry: {
     source: LogSource

@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
+import { EMAIL_CODE_TYPE_LOGIN, VERIFY_TYPE_GOOGLE } from '../../electron/shared/verify'
 
 const COUNTDOWN_SECONDS = 60
-
-export function parseEmailFromErrDlt(errDlt?: string): string {
-  if (!errDlt) return ''
-  const m = errDlt.match(/email=([^,\s]+)/i)
-  return m?.[1] ?? ''
-}
 
 function CodeInput({ onChange }: { onChange: (code: string) => void }) {
   const [codes, setCodes] = useState<string[]>(Array(6).fill(''))
@@ -115,11 +110,12 @@ function EmailVerifySection({
     setSendError('')
     try {
       setSending(true)
-      const result = await window.auth?.sendEmailCode({ email, codeType: 25 })
+      const result = await window.auth?.sendEmailCode({ email, codeType: EMAIL_CODE_TYPE_LOGIN })
       if (!result?.success) {
         setSendError(result?.errMsg || '发送验证码失败')
         return
       }
+      console.log('[SecurityVerifyDialog] sendEmailCode 成功，已启动重发倒计时')
       startCountdown()
     } catch (e) {
       setSendError(e instanceof Error ? e.message : '发送验证码失败')
@@ -183,7 +179,7 @@ export default function SecurityVerifyDialog({
   onSubmit
 }: SecurityVerifyDialogProps) {
   const needEmail = verifiys.includes('1')
-  const needGoogle = verifiys.includes('2')
+  const needGoogle = verifiys.includes(VERIFY_TYPE_GOOGLE)
   const multiStep = needEmail && needGoogle
 
   const [step, setStep] = useState(0)

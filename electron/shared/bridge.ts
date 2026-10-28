@@ -1,6 +1,7 @@
 /**
  * WebView 桥接相关的共享类型与通道定义
  */
+import type { WsMessageEvent, WsStatusEvent } from './ws'
 
 /** 桥接相关 IPC 通道 */
 export const BRIDGE_CHANNELS = {
@@ -10,6 +11,8 @@ export const BRIDGE_CHANNELS = {
   SELECT_FILE: 'bridge:select-file',
   SAVE_IMAGE: 'bridge:save-image',
   GET_NODE_CONFIG: 'bridge:get-node-config',
+  /** H5 登录后没有钱包 token：刷新钱包会话并返回给 H5 内存态凭据 */
+  WALLET_SESSION_REFRESH: 'bridge:wallet-session-refresh',
   WALLET_WS: 'bridge:wallet-ws',
   WALLET_WS_MESSAGE: 'bridge:wallet-ws-message'
 } as const
@@ -60,8 +63,14 @@ export interface BridgeApi {
   selectFile: (allowList?: string[]) => Promise<string | null>
   saveImage: (payload: SaveImagePayload) => Promise<void>
   getNodeConfig: () => Promise<NodeConfigResult>
+  /** 刷新钱包会话，返回 { token, secretKey }；失败时 token 为空 */
+  refreshWalletSession?: () => Promise<{ token: string; secretKey: string }>
   walletWs: (data: unknown) => Promise<unknown>
   onWalletWsMessage?: (callback: (msg: unknown) => void) => () => void
+  /** 美股行情 WS 推送（H5 的 usStockPublic 订阅结果 + 行情） */
+  onUsStockWsMessage?: (callback: (event: WsMessageEvent) => void) => () => void
+  onUsStockWsStatus?: (callback: (event: WsStatusEvent) => void) => () => void
+  getUsStockWsStatus?: () => Promise<unknown>
   toggleDevTools?: () => void
   toggleWebviewDevTools?: () => void
 }
