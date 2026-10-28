@@ -267,31 +267,48 @@ function App() {
     await syncTokensAndEnterMain(data.userID, curEnv)
   }
 
-  // ===== 退出登录 =====
-  const handleLogout = useCallback(() => {
-    window.auth?.logout(envMode)
-    useBridgeStore.getState().setAuth('token', '')
-    useBridgeStore.getState().setAuth('secretKey', '')
-    useBridgeStore.getState().setAuth('imToken', '')
-    useBridgeStore.getState().setAuth('chatToken', '')
-    useBridgeStore.getState().setAuth('userID', '')
-    setUserID('')
-    setUrl('')
-    setInputUrl('')
-    setPageState('login')
-  }, [envMode])
-
-  // ===== Token 错误/过期提示（避免误报级联退登清空用户凭证） =====
-  const handleAuthExpired = useCallback(
-    (reason?: string) => {
-      console.warn('[App] 登录凭据警告:', reason)
+  /**
+   * 清空登录态：主进程落盘的 auth_<env>.json + 渲染进程内存中的凭据 + 页面状态
+   *
+   * 只要回到登录页就必须走这里，否则登录页一刷新又会读到旧 token 直接进主页。
+   */
+  const resetAuthState = useCallback(
+    (reason: string, targetEnv?: EnvMode) => {
+      const mode = targetEnv || envMode
+      window.auth?.logout(mode)
+      const bridgeStore = useBridgeStore.getState()
+      bridgeStore.clearAuth()
+      setUserID('')
+      setUrl('')
+      setInputUrl('')
+      setBridgeReady(false)
+      setPageState('login')
       addLog({
         source: 'system',
         level: 'warn',
-        message: `Token 异常提示: ${reason || '部分接口鉴权失败'}`
+        message: `已清空【${ENV_MODES[mode]?.label || mode}】登录凭据并退回登录页：${reason}`
       })
     },
-    [addLog]
+    [envMode, addLog]
+  )
+
+  // ===== 退出登录 =====
+  const handleLogout = useCallback(() => {
+    resetAuthState('用户主动退出')
+  }, [resetAuthState])
+
+  /**
+   * Token 失效 / 网页请求重新登录
+   *
+   * 接口返回 token 不匹配、过期，或 H5 主动走 toLogin / goLogin 时，
+   * 必须真正退出并清空凭据，而不是只打一条日志。
+   */
+  const handleAuthExpired = useCallback(
+    (reason?: string) => {
+      console.warn('[App] 登录凭据失效:', reason)
+      resetAuthState(reason || '接口鉴权失败')
+    },
+    [resetAuthState]
   )
 
   // ===== 切换选中的 H5 模块并持久化记忆 =====

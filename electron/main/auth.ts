@@ -14,6 +14,9 @@ interface AuthStore {
   secretKey: string
   kbitToken: string
   chatToken: string
+  /** 私有 WS(美股订单/持仓) 登录用的 appKey / appSecret，仅内存保存（属于敏感凭证，不落盘） */
+  kbitAppKey: string
+  kbitAppSecret: string
 }
 
 const defaults: AuthStore = {
@@ -25,7 +28,9 @@ const defaults: AuthStore = {
   walletToken: '',
   secretKey: '',
   kbitToken: '',
-  chatToken: ''
+  chatToken: '',
+  kbitAppKey: '',
+  kbitAppSecret: ''
 }
 
 /** 页面 getAuth 期望的 token 负载 */
@@ -80,17 +85,66 @@ function loadStore(env?: EnvMode): AuthStore {
           } catch {}
         }
       }
-      return store
+      return withMemorySecrets(store, env)
     }
   } catch (e) {
     console.error(`[Auth] 读取存储失败 (${resolveEnv(env)}):`, e)
   }
-  return { ...defaults }
+  return withMemorySecrets({ ...defaults }, env)
+}
+
+// 私有 WS 凭证只在内存里，随进程退出失效，避免敏感 secret 落盘
+const memorySecrets: Partial<Record<EnvMode, { kbitAppKey: string; kbitAppSecret: string }>> = {}
+
+function withMemorySecrets(store: AuthStore, env?: EnvMode): AuthStore {
+  const mem = memorySecrets[resolveEnv(env)]
+  return mem ? { ...store, ...mem } : store
+}
+
+/** 登录成功后写入私有 WS 凭证（仅内存） */
+/** 读取当前环境的完整登录存储（含 token / walletToken / secretKey 等） */
+export function getStore(env?: EnvMode): AuthStore {
+  return loadStore(env)
+}
+
+/**
+ * 单独更新钱包会话（thirdPartyUserTokenRefresh 换来的钱包 token 与其 userSecret）。
+ * 只覆盖 walletToken / secretKey，其余登录信息保持不变。
+ */
+export function saveWalletSession(
+  data: { walletToken: string; secretKey?: string },
+  env?: EnvMode
+): void {
+  const store = loadStore(env)
+  store.walletToken = data.walletToken
+  store.secretKey = data.secretKey ?? store.secretKey
+  saveStore(store, env)
+}
+
+export function saveKbitAppSecret(data: { kbitAppKey?: string; kbitAppSecret?: string }, env?: EnvMode) {
+  if (data.kbitAppSecret) {
+    memorySecrets[resolveEnv(env)] = {
+      kbitAppKey: data.kbitAppKey ?? '',
+      kbitAppSecret: data.kbitAppSecret
+    }
+  }
+}
+
+/** 获取私有 WS 登录凭证；登录响应里没给 secret 时退回持久化的 secretKey */
+export function getKbitAppSecret(env?: EnvMode): { kbitAppKey: string; kbitAppSecret: string } {
+  const store = withMemorySecrets(loadStore(env), env)
+  return {
+    kbitAppKey: store.kbitAppKey || loadConfig().usStockWsApiKey,
+    kbitAppSecret: store.kbitAppSecret || store.secretKey
+  }
 }
 
 function saveStore(data: AuthStore, env?: EnvMode): void {
   try {
-    writeFileSync(getStorePath(env), JSON.stringify(data, null, 2), 'utf-8')
+    const { kbitAppKey, kbitAppSecret, ...persisted } = data
+    void kbitAppKey
+    void kbitAppSecret
+    writeFileSync(getStorePath(env), JSON.stringify(persisted, null, 2), 'utf-8')
   } catch (e) {
     console.error(`[Auth] 写入存储失败 (${resolveEnv(env)}):`, e)
   }
@@ -146,11 +200,18 @@ export function getUserID(env?: EnvMode): string {
 
 export function isTokenValid(env?: EnvMode): boolean {
   const store = loadStore(env)
-  // 只要本地存储着 token，直接允许进入页面，过期或错误由运行时请求时捕获强制退出
-  return !!(store.token || store.chatToken || store.walletToken)
+  const token = store.token || store.chatToken || store.walletToken
+  // 没有 token 一律视为未登录
+  if (!token) return false
+  // 本地有过期时间且已过期：直接判定失效。之前只看「有没有 token」，
+  // 过期凭证也会自动进主页，然后每个接口都鉴权失败，表现为「怎么点都不对」。
+  // 没有过期时间的旧数据仍然放行，由运行时请求捕获后强制退出。
+  if (store.expireTime && store.expireTime * 1000 <= Date.now()) return false
+  return true
 }
 
 export function clearToken(env?: EnvMode) {
+  delete memorySecrets[resolveEnv(env)]
   saveStore({ ...defaults }, env)
 }
 

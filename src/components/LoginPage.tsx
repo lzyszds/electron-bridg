@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Settings } from 'lucide-react'
 import { SettingsDialog, type AppConfig } from './SettingsDialog'
-import SecurityVerifyDialog, { parseEmailFromErrDlt } from './SecurityVerifyDialog'
+import SecurityVerifyDialog from './SecurityVerifyDialog'
+import {
+  DEFAULT_VERIFY_TYPES,
+  ERR_NEED_SECURITY_VERIFY,
+  parseVerifyRequirement
+} from '../../electron/shared/verify'
 import { ENV_MODES, envPresetPatch, type EnvMode } from '../config/modules'
 import { cn } from '../lib/utils'
 
@@ -73,6 +78,10 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
 
     // 登录页切环境时立刻写回主进程，否则 getNodeConfig 仍会按磁盘上的旧 envMode 返回 buzz
     void window.appConfig?.setConfig(envPresetPatch(mode))
+
+    // 停在登录页就意味着当前环境未登录：清掉该环境残留的 token，
+    // 否则刷新/重启会又被自动登录带进主页。只清当前环境，不影响其它环境已保存的登录态。
+    window.auth?.logout(mode)
   }
 
   useEffect(() => {
@@ -102,7 +111,11 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
     }
     if (extra?.emailCode) params.emailCode = extra.emailCode
     if (extra?.googleCode) params.googleCode = extra.googleCode
-    return window.auth?.login(params)
+    // 主窗口 preload 未加载时 window.auth 不存在，此时给出明确提示而不是 undefined.read
+    if (!window.auth?.login) {
+      throw new Error('主窗口 Bridge 未加载（window.auth 不可用），请确认 preload 正常注入后重启应用')
+    }
+    return window.auth.login(params)
   }
 
   const handleLoginSuccess = (result: { success: boolean; data?: { token: string; userID: string } }): boolean => {
@@ -150,18 +163,22 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
       const result = await callLogin()
       console.log('[LoginPage] 登录响应结果 ->', result)
 
+      // 兜底：主进程异常但没抛错时可能拿到 undefined
+      if (!result) throw new Error('登录接口无返回（主进程 IPC 无响应）')
+
       if (handleLoginSuccess(result)) return
 
-      // errCode 20016 = 需要安全验证
-      if (result?.errCode === 20016) {
-        const verifiysStr = result.errDlt?.match(/verifiys=([0-9]+(?:,[0-9]+)*)/)?.[1]
-        const email = parseEmailFromErrDlt(result.errDlt)
-        if (verifiysStr && email) {
-          setVerifyError('')
-          setVerifyState({ email, verifiys: verifiysStr.split(',') })
-          return
-        }
-        setError('无法解析安全验证信息，请稍后重试')
+      // 需要二次安全验证：优先用主进程解析好的结构化 verify，再退回自解析 errDlt
+      if (result?.errCode === ERR_NEED_SECURITY_VERIFY) {
+        const requirement =
+          result.verify ?? parseVerifyRequirement(result.errDlt, account) ?? {
+            email: account,
+            verifiys: [...DEFAULT_VERIFY_TYPES]
+          }
+        if (!requirement.email) requirement.email = account
+        console.log('[LoginPage] 需要安全验证 ->', requirement)
+        setVerifyError('')
+        setVerifyState({ email: requirement.email, verifiys: requirement.verifiys })
         return
       }
 
@@ -189,7 +206,18 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
         setVerifyState(null)
         return
       }
-      const msg = result?.errMsg || (result?.errCode !== undefined ? `验证失败 (错误码: ${result.errCode})` : '验证失败')
+      // 验证码本身错误且服务端仍要求验证时，把弹窗重置到第一步，否则用户得重新输入邮箱验证码
+      if (result?.errCode === ERR_NEED_SECURITY_VERIFY) {
+        const requirement =
+          result.verify ?? parseVerifyRequirement(result.errDlt, account) ?? {
+            email: account,
+            verifiys: [...DEFAULT_VERIFY_TYPES]
+          }
+        setVerifyState({ email: requirement.email || account, verifiys: requirement.verifiys })
+      }
+      // 完整错误信息：主进程已把 errDlt 拼进 errMsg，这里再兜一层，避免弹窗上什么都看不到
+      const msg = result?.errMsg || result?.errDlt
+        || (result?.errCode !== undefined ? `验证失败 (错误码: ${result.errCode})` : '验证失败')
       setVerifyError(msg)
       console.error('[LoginPage] 验证失败提示:', msg)
       throw new Error(msg)

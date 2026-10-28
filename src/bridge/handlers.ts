@@ -82,8 +82,9 @@ function checkAuthError(status: number, data: unknown): string | null {
     const errCode = obj.errCode ?? obj.ErrCode ?? obj.code ?? obj.Code
     const errMsg = String(obj.errMsg ?? obj.ErrMsg ?? obj.errDlt ?? obj.ErrDlt ?? obj.message ?? '')
 
-    // 常见 Token 错误码 (1001: 未登录/Token错误, 1004: Token过期, 401: Unauthorized)
-    if (errCode === 1001 || errCode === 1004 || errCode === 401) {
+    // 常见 Token 错误码 (1001: 未登录/Token错误, 1004: Token过期, 401: Unauthorized, -1: 服务端 token 解析失败)
+    const codeNum = Number(errCode)
+    if (codeNum === 1001 || codeNum === 1004 || codeNum === 401 || codeNum === -1) {
       return errMsg || `Token 错误/已过期 (错误码: ${errCode})`
     }
 
@@ -95,6 +96,8 @@ function checkAuthError(status: number, data: unknown): string | null {
       /登录.*过期/i.test(errMsg) ||
       /未登录/i.test(errMsg) ||
       /请重新登录/i.test(errMsg) ||
+      /token.*解析失败/i.test(errMsg) ||
+      /token.*(不匹配|不一致)/i.test(errMsg) ||
       /TokenException/i.test(errMsg)
     ) {
       return errMsg
@@ -528,7 +531,8 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
 
     const authErr = checkAuthError(res?.status, res?.data)
     if (authErr) {
-      log(`[proxy] 提示: 接口响应提示鉴权异常或Token已过期: ${authErr}`, res?.data)
+      log(`[proxy] 接口返回鉴权异常，强制退回登录: ${authErr}`, res?.data)
+      deps.onAuthExpired?.(authErr)
     }
 
     log(`[proxy] ← ${finalMethod} ${finalUrl} [HTTP ${status}]`, res?.data)
