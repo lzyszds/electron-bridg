@@ -67,6 +67,14 @@ function App() {
   const [userID, setUserID] = useState('')
 
   const webviewRef = useRef<WebviewTag | null>(null)
+  /**
+   * webview 的初始地址（只取第一次进入主界面时的 url）
+   *
+   * <webview> 的 src 是受控属性：React 每次重渲染都可能比较 src，配合前面
+   * navigateToEnvModule/handleSelectModule 已经手动 loadURL，会出现「加载两次、画面闪两次」。
+   * 这里固定住初始值，之后一切导航都只走 loadURL。
+   */
+  const initialWebviewUrlRef = useRef<string>('')
   const bridgeRef = useRef<JsBridge | null>(null)
   const preloadPathRef = useRef<string>('')
   const [preloadPath, setPreloadPath] = useState('')
@@ -209,6 +217,10 @@ function App() {
         // 忽略
       }
 
+      // 进入主界面时锁定 webview 的初始地址（此前为空则记录本次）
+      if (!initialWebviewUrlRef.current) {
+        initialWebviewUrlRef.current = withAppChannel(targetUrl)
+      }
       setUrl(targetUrl)
       setInputUrl(targetUrl)
       setPageState('main')
@@ -1181,7 +1193,8 @@ function App() {
                         <webview
                           key={preloadPath}
                           ref={webviewRef as never}
-                          src={withAppChannel(url)}
+                          // 只给初始地址：后续导航全部走 loadURL，避免 src 变化触发二次加载（页面闪两次）
+                          src={initialWebviewUrlRef.current || withAppChannel(url)}
                           preload={`file://${preloadPath}`}
                           useragent={userAgent}
                           allowpopups={"true" as unknown as boolean}
