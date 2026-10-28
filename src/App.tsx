@@ -59,8 +59,8 @@ type PageState = 'checking' | 'login' | 'main'
 /** 记录「用户主动退出登录」的环境，避免重启后被残留 token 自动带回主页 */
 const LOGGED_OUT_KEY = 'qqlink_logged_out_env'
 
-/** 本地模式选择的线上后端（prod / test），本地 H5 的账号与接口跟着它走 */
-const LOCAL_BACKEND_KEY = 'qqlink_local_backend'
+/** 本地 H5 开关标记：开启时 H5 走 localhost:8888，账号与接口仍由 envMode 决定 */
+const LOCAL_ENABLED_KEY = 'qqlink_local_enabled'
 
 function App() {
   const [pageState, setPageState] = useState<PageState>('checking')
@@ -119,8 +119,7 @@ function App() {
         useBridgeStore.getState().setAuth('userID', uid)
         // 登录/自动登录拿到的是最新凭据：立刻归档到该环境名下，
         // 后续本地开关、环境切换都从这里取，避免用到上一套旧 token
-        const archiveKey = mode === 'local' ? localStorage.getItem(LOCAL_BACKEND_KEY) || 'test' : mode
-        useBridgeStore.getState().setAuthForEnv(archiveKey, useBridgeStore.getState().auth)
+        useBridgeStore.getState().setAuthForEnv(mode, useBridgeStore.getState().auth)
         addLog({
           source: 'system',
           level: 'system',
@@ -207,8 +206,10 @@ function App() {
 
   // 待切换的目标环境模式（非 null 时唤起二次确认提醒弹窗）
   const [pendingEnvMode, setPendingEnvMode] = useState<EnvMode | null>(null)
-  /** 本地模式当前使用的后端环境（仅用于展示，真实值存在 localStorage） */
-  const [localBackend, setLocalBackend] = useState<'prod' | 'test'>('test')
+  /** 本地 H5 开关（与正式/测试并联，不改变 envMode） */
+  const [localEnabled, setLocalEnabled] = useState<boolean>(
+    () => localStorage.getItem(LOCAL_ENABLED_KEY) === '1'
+  )
 
   // ===== 用户请求切换环境模式：唤起二次确认弹窗 =====
   /**
@@ -218,8 +219,7 @@ function App() {
    * 这样本地与对应的线上环境共享同一套账号。
    */
   const archiveCurrentAuth = useCallback((env?: string) => {
-    const current = env || envMode
-    const key = current === 'local' ? localStorage.getItem(LOCAL_BACKEND_KEY) || 'test' : current
+    const key = env || envMode
     const auth = useBridgeStore.getState().auth
     if (auth.userID || auth.token) {
       useBridgeStore.getState().setAuthForEnv(key, auth)
@@ -258,72 +258,32 @@ function App() {
   )
 
   /**
-   * 本地开关（开 / 关共用）
+   * 本地开关：它与「正式 / 测试」**并联**，不替换这两个选项
    *
-   * 本地模式**不改动任何 token / 凭据**：主进程的 auth_<env>.json 与 authByEnv 都保持原样，
-   * 本地 H5 直接复用「开关前所选环境」的账号与接口配置，切来切去不会触发重新登录。
-   * 只有关掉本地时，才把环境配置切回那个线上环境。
+   * - envMode 始终是 prod / test（决定账号、接口、token 从哪套取）
+   * - localEnabled 只决定 H5 来源：开 → localhost:8888，关 → 当前 envMode 的线上域名
+   * 因此开关过程中 envMode、凭据、authByEnv 都不变，可以在本地模式下直接点正式/测试切换账号体系。
    */
   const handleToggleLocalMode = useCallback(async () => {
-    const savedBackend = localStorage.getItem(LOCAL_BACKEND_KEY)
-    const backend: 'prod' | 'test' = savedBackend === 'prod' ? 'prod' : 'test'
+    const nextEnabled = !localEnabled
+    setLocalEnabled(nextEnabled)
+    localStorage.setItem(LOCAL_ENABLED_KEY, nextEnabled ? '1' : '0')
 
-    if (envMode !== 'local') {
-      // 打开本地：记住当前线上环境（就是本地要用的后端），随后只换 H5 来源
-      const currentBackend: 'prod' | 'test' = envMode === 'test' ? 'test' : 'prod'
-      localStorage.setItem(LOCAL_BACKEND_KEY, currentBackend)
-      setLocalBackend(currentBackend)
-      setEnvMode('local')
-      localStorage.setItem('qqlink_env_mode', 'local')
-
-      const preset = ENV_MODES.local
-      const backPreset = ENV_MODES[currentBackend]
-      setCurrentBaseUrl(preset.h5BaseUrl)
-      try {
-        // 后端接口与 wallet 地址直接沿用所选线上环境，不读取/覆盖凭据
-        await window.appConfig?.setConfig({
-          envMode: 'local',
-          localBackend: currentBackend,
-          h5BaseUrl: preset.h5BaseUrl,
-          walletUrl: backPreset.walletUrl,
-          apiBaseUrl: backPreset.apiBaseUrl
-        })
-      } catch {
-        // 忽略
-      }
-      await navigateToEnvModule(
-        preset.h5BaseUrl,
-        `本地模式已开启：H5 → ${preset.h5BaseUrl}，后端沿用【${backPreset.label}】，登录态与凭据保持不变`
-      )
-      return
-    }
-
-    // 关闭本地：环境配置切回所选线上环境，同样不动 token
-    const preset = ENV_MODES[backend]
-    setEnvMode(backend)
-    localStorage.setItem('qqlink_env_mode', backend)
-    setCurrentBaseUrl(preset.h5BaseUrl)
+    const baseUrl = nextEnabled ? ENV_MODES.local.h5BaseUrl : ENV_MODES[envMode].h5BaseUrl
+    setCurrentBaseUrl(baseUrl)
     try {
-      await window.appConfig?.setConfig({
-        envMode: backend,
-        h5BaseUrl: preset.h5BaseUrl,
-        walletUrl: preset.walletUrl,
-        apiBaseUrl: preset.apiBaseUrl
-      })
+      // envMode / wallet / api 保持原样，只换 H5 来源
+      await window.appConfig?.setConfig({ h5BaseUrl: baseUrl })
     } catch {
       // 忽略
     }
     await navigateToEnvModule(
-      preset.h5BaseUrl,
-      `本地模式已关闭：回到【${preset.label}】，登录态与凭据保持不变`
+      baseUrl,
+      nextEnabled
+        ? `已开启本地 H5：${baseUrl}（账号与接口沿用【${ENV_MODES[envMode].label}】）`
+        : `已关闭本地 H5，回到【${ENV_MODES[envMode].label}】：${baseUrl}`
     )
-  }, [envMode, navigateToEnvModule])
-
-  // 本地后端展示值跟随 localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(LOCAL_BACKEND_KEY)
-    setLocalBackend(saved === 'prod' ? 'prod' : 'test')
-  }, [envMode])
+  }, [localEnabled, envMode, navigateToEnvModule])
 
   const handleRequestSwitchEnvMode = useCallback(
     (newMode: EnvMode) => {
@@ -853,9 +813,7 @@ function App() {
                     active
                       ? mode === 'test'
                         ? 'bg-white text-purple-600 shadow-xs border border-purple-200 font-bold'
-                        : mode === 'local'
-                          ? 'bg-white text-emerald-600 shadow-xs border border-emerald-200 font-bold'
-                          : 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
+                        : 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
                       : 'text-slate-500 hover:text-slate-800'
                   )}
                   title={`${preset.label} — ${preset.h5BaseUrl}`}
@@ -866,9 +824,7 @@ function App() {
                       active
                         ? mode === 'test'
                           ? 'bg-purple-500'
-                          : mode === 'local'
-                            ? 'bg-emerald-500'
-                            : 'bg-blue-500'
+                          : 'bg-blue-500'
                         : 'bg-slate-300'
                     )}
                   />
@@ -883,27 +839,27 @@ function App() {
               onClick={() => handleToggleLocalMode()}
               className={cn(
                 'ml-0.5 h-6 px-2 rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
-                envMode === 'local'
+                localEnabled
                   ? 'bg-white text-emerald-600 shadow-xs border border-emerald-200'
                   : 'text-slate-400 hover:text-slate-700'
               )}
               title={
-                envMode === 'local'
-                  ? `本地模式已开启（${ENV_MODES.local.h5BaseUrl}，后端：${ENV_MODES[localBackend].label}）— 点击关闭`
-                  : '打开本地模式：H5 指向 localhost，账号沿用最近一次选择的正式/测试环境'
+                localEnabled
+                  ? `本地 H5 已开启（${ENV_MODES.local.h5BaseUrl}），账号与接口沿用【${ENV_MODES[envMode].label}】— 点击关闭`
+                  : '开启本地 H5：只把页面换成 localhost，正式/测试的账号与接口保持不变'
               }
-              aria-pressed={envMode === 'local'}
+              aria-pressed={localEnabled}
             >
               <span
                 className={cn(
                   'relative inline-flex h-3 w-5 items-center rounded-full transition-colors',
-                  envMode === 'local' ? 'bg-emerald-500' : 'bg-slate-300'
+                  localEnabled ? 'bg-emerald-500' : 'bg-slate-300'
                 )}
               >
                 <span
                   className={cn(
                     'absolute h-2 w-2 rounded-full bg-white shadow transition-all',
-                    envMode === 'local' ? 'left-2.5' : 'left-0.5'
+                    localEnabled ? 'left-2.5' : 'left-0.5'
                   )}
                 />
               </span>
