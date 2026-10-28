@@ -658,7 +658,13 @@ function App() {
       }
     }
     const injectBridge = () => {
-      if (!wv.getWebContentsId) return
+      // webview 还没附着到 DOM 时访问 getWebContentsId 会同步抛错，
+      // 在 effect 里属于未捕获异常，会让整个 <App> 挂掉，这里先兜住
+      try {
+        wv.getWebContentsId()
+      } catch {
+        return
+      }
       wv.executeJavaScript(
         // 用「有没有 onMessageReceived」判断，H5 的 `var WebViewJSBridge;` 占位声明不算桥
         `(function(){ if (window.WebViewJSBridge && typeof window.WebViewJSBridge.onMessageReceived === 'function') return 'ok';
