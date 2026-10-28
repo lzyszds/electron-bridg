@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ListFilter,
   Terminal,
@@ -474,7 +474,12 @@ function ElectronWireViewer({ wire }: { wire: ElectronWirePayload }) {
   )
 }
 
-function LogRow({ entry }: { entry: LogEntry }) {
+/**
+ * 单条日志行
+ *
+ * 日志每 80ms 批量刷新一次，若整表重渲染会把几十行 DOM 都重建一遍；memo 后只有新行会渲染。
+ */
+const LogRow = memo(function LogRow({ entry }: { entry: LogEntry }) {
   const [expanded, setExpanded] = useState(false)
   const isWire = !!entry.wire || entry.source === 'electron'
   const hasDetail = (entry.detail !== undefined && entry.detail !== null) || isWire
@@ -598,8 +603,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
       )}
     </div>
   )
-}
-
+})
 export function LogPanel() {
   const logs = useLogStore((s) => s.logs)
   const clearLogs = useLogStore((s) => s.clearLogs)
@@ -609,21 +613,19 @@ export function LogPanel() {
   const listRef = useRef<HTMLDivElement>(null)
 
   // 统计各类型日志条数
+  // 一次遍历同时算出各分类计数，避免对同一份日志过滤 5 遍
   const counts = useMemo(() => {
-    return {
-      all: logs.length,
-      electron: logs.filter((l) => l.source === 'electron').length,
-      console: logs.filter((l) => l.source === 'console').length,
-      bridge: logs.filter((l) => l.source === 'bridge').length,
-      system: logs.filter((l) => l.source === 'system').length,
-      ws: logs.filter((l) => l.source === 'ws').length
+    const result = { all: logs.length, electron: 0, console: 0, bridge: 0, system: 0, ws: 0 }
+    for (const l of logs) {
+      if (l.source in result) result[l.source as keyof typeof result]++
     }
+    return result
   }, [logs])
 
   const filtered = useMemo(() => {
     let list = filter === 'all' ? logs : logs.filter((l) => l.source === filter)
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
       list = list.filter(
         (l) =>
           l.message.toLowerCase().includes(q) ||
@@ -631,7 +633,8 @@ export function LogPanel() {
           (l.level && l.level.toLowerCase().includes(q))
       )
     }
-    return list
+    // 面板滚到底也看不完 2000 条：只渲染最近 300 条，显著减少 DOM 节点与布局开销
+    return list.length > 300 ? list.slice(-300) : list
   }, [logs, filter, searchQuery])
 
   useEffect(() => {

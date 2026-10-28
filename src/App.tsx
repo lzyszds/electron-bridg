@@ -614,14 +614,29 @@ function App() {
       }
     }
 
+    // H5 的 console 输出可能在一次交互里刷几十条，合并到下一帧统一写入
+    let consoleBuffer: Array<{ level: 'debug' | 'log' | 'warn' | 'error'; message: string }> = []
+    let consoleTimer: ReturnType<typeof setTimeout> | null = null
+    const flushConsole = () => {
+      consoleTimer = null
+      if (!consoleBuffer.length) return
+      const batch = consoleBuffer
+      consoleBuffer = []
+      for (const item of batch) {
+        addLog({ source: 'console', level: item.level, message: item.message })
+      }
+    }
     const onConsoleMessage = (e: Electron.ConsoleMessageEvent) => {
       const levelMap = ['debug', 'log', 'warn', 'error'] as const
       const level = levelMap[e.level] ?? 'log'
-      addLog({
-        source: 'console',
-        level,
-        message: e.message || ''
-      })
+      consoleBuffer.push({ level, message: e.message || '' })
+      // 成批时等 100ms 合并写入；缓冲超过 50 条立刻冲刷，避免刷屏场景下排队
+      if (consoleBuffer.length >= 50) {
+        if (consoleTimer) clearTimeout(consoleTimer)
+        flushConsole()
+        return
+      }
+      if (!consoleTimer) consoleTimer = setTimeout(flushConsole, 100)
     }
 
     const onDidStartLoading = () => {
@@ -746,6 +761,7 @@ function App() {
 
     return () => {
       if (injectTimer) clearInterval(injectTimer)
+      if (consoleTimer) clearTimeout(consoleTimer)
       wv.removeEventListener('ipc-message', onIpcMessage)
       wv.removeEventListener('console-message', onConsoleMessage)
       wv.removeEventListener('did-start-loading', onDidStartLoading)

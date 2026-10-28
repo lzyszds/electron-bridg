@@ -790,8 +790,10 @@ function setupNetworkSecurity(): void {
   })
 
   // 对所有网络请求剥除阻止跨域的 CSP 头，并增加 CORS 支持
+  // 注意：这个回调对**每一个**响应都会执行（含图片、字体、轮询），里面不能做重活。
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const responseHeaders = { ...details.responseHeaders }
+    const responseHeaders = details.responseHeaders
+    if (!responseHeaders) return callback({})
 
     // 移除阻断请求的 CSP 头
     delete responseHeaders['content-security-policy']
