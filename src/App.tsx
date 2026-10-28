@@ -187,12 +187,71 @@ function App() {
   const [pendingEnvMode, setPendingEnvMode] = useState<EnvMode | null>(null)
 
   // ===== 用户请求切换环境模式：唤起二次确认弹窗 =====
+  /**
+   * 切到本地模式：只改 H5 来源，登录态原地保留
+   *
+   * 本地 H5 跑在 localhost:8888，但接口仍走测试环境，和 test 是同一套账号，
+   * 所以这里不清凭据、不退登录页，直接把地址栏与 webview 切过去。
+   */
+  const switchToLocalMode = useCallback(async () => {
+    const preset = ENV_MODES.local
+    const prevMode = envMode
+    setEnvMode('local')
+    setCurrentBaseUrl(preset.h5BaseUrl)
+    localStorage.setItem('qqlink_env_mode', 'local')
+
+    try {
+      // wallet/api 保持调用方环境（通常就是 test），只有 h5BaseUrl 换成本地
+      const cfg = await window.appConfig?.getConfig()
+      await window.appConfig?.setConfig({
+        envMode: 'local',
+        h5BaseUrl: preset.h5BaseUrl,
+        // 钱包/Chat 仍是 test 的地址就不用动，避免把正在用的 test 接口改掉
+        walletUrl: cfg?.walletUrl || preset.walletUrl,
+        apiBaseUrl: cfg?.apiBaseUrl || preset.apiBaseUrl
+      })
+    } catch {
+      // 忽略
+    }
+
+    // 沿用当前已登录的凭据，切换 webview 到本地 H5
+    const mod = H5_MODULES.find((m) => m.id === currentModuleId) || H5_MODULES[0]
+    const nextUrl = withAppChannel(
+      buildModuleUrl(preset.h5BaseUrl, mod.path, locale, withDebugParams)
+    )
+    setUrl(nextUrl)
+    setInputUrl(nextUrl)
+    localStorage.setItem('qqlink_last_visited_url', nextUrl)
+    try {
+      await window.appConfig?.setConfig({ lastModuleId: mod.id, webviewUrl: nextUrl })
+    } catch {
+      // 忽略
+    }
+    try {
+      webviewRef.current?.loadURL(nextUrl)
+    } catch {
+      // 忽略未就绪，src 属性会兜底
+    }
+
+    addLog({
+      source: 'system',
+      level: 'system',
+      message: `已切换至【${preset.label}】：H5 来源改为 ${preset.h5BaseUrl}，沿用【${ENV_MODES[prevMode]?.label || prevMode}】的登录态，无需重新登录`
+    })
+  }, [envMode, currentModuleId, locale, withDebugParams, addLog])
+
   const handleRequestSwitchEnvMode = useCallback(
     (newMode: EnvMode) => {
       if (newMode === envMode) return
+      // 本地模式与测试环境共用同一套账号和接口（wallet / chat 都指向 buzz），
+      // 不需要重新登录，直接切换 H5 来源即可。
+      if (newMode === 'local') {
+        void switchToLocalMode()
+        return
+      }
       setPendingEnvMode(newMode)
     },
-    [envMode]
+    [envMode, switchToLocalMode]
   )
 
   // ===== 二次确认提醒后：确认切换环境并强制退回登录页 =====
