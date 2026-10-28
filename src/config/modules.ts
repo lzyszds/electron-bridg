@@ -23,7 +23,8 @@ export const MODULE_CATEGORIES: ModuleCategory[] = [
   { id: 'financial', name: '金融行情', icon: '📈' },
   { id: 'asset', name: '资产交易', icon: '💳' },
   { id: 'business', name: '核心业务', icon: '🧩' },
-  { id: 'activity', name: '活动靓号', icon: '🎁' }
+  { id: 'activity', name: '活动靓号', icon: '🎁' },
+  { id: 'dev', name: '支持调试', icon: '🛠️' }
 ]
 
 export const H5_MODULES: H5Module[] = [
@@ -123,9 +124,54 @@ export const H5_MODULES: H5Module[] = [
     path: '/vanitasNumber',
     description: '稀缺 3~7 位顶级个性 QQLink 账号',
     icon: '🔢'
-  }
+  },
 
-  // 「支持调试」分类下的页面目前已无可用页面，分类定义保留，便于后续补回
+  // ===== 支持调试 =====
+  {
+    id: 'dev-console',
+    name: 'H5 Dev 调试页',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/dev',
+    description: 'Nuxt 本地调试与桥接特性试验场',
+    icon: '⚙️'
+  },
+  {
+    id: 'support-feedback',
+    name: '意见与工单反馈',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/module/feedback',
+    description: '提交工单与产品体验反馈',
+    icon: '💬'
+  },
+  {
+    id: 'support-tradepwd-appeal',
+    name: '资金密码申诉',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/module/iForget/tradepwd',
+    description: '资金密码找回、曾用密码及实名申诉流程',
+    icon: '🔐'
+  },
+  {
+    id: 'support-iForget',
+    name: '登录密码申诉',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/module/iForget/password',
+    description: '账号登录密码安全申诉与凭证重置',
+    icon: '🔑'
+  },
+  {
+    id: 'support-banRecord',
+    name: '封禁记录公示',
+    category: 'dev',
+    categoryName: '支持调试',
+    path: '/module/banRecord',
+    description: '违规账号公开公示列表',
+    icon: '⚠️'
+  }
 ]
 
 /**
