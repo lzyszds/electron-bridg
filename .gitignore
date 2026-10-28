@@ -40,3 +40,11 @@ coverage/
 # Electron
 *.js.map
 
+# 图标生成临时目录（build/icon.png、icon.icns、icon.ico 需要提交）
+build/icon.iconset/
+
+
+# 本地 SSH 密钥（仅调试用，绝不能提交）
+*.pem
+*.key
+macmini*
