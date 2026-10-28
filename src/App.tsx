@@ -613,6 +613,13 @@ function App() {
     }
 
     const onDidStartLoading = () => {
+      // 记录每次开始加载的来源 URL，出现「返回要点两次」时可直接看出是否重复加载
+      try {
+        const target = wv.getURL?.() || ''
+        addLog({ source: 'system', level: 'system', message: `开始加载: ${target || '(about:blank)'}` })
+      } catch {
+        // 忽略
+      }
       setIsLoading(true)
       // 任何一次加载（刷新/跳转/H5 自身 location 变化）都会销毁页面里的桥，
       // 统一在这里复位，等 H5 重新发 ready 再置回已就绪

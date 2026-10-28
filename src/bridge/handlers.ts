@@ -215,11 +215,29 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     })
   }
 
-  // 返回上一页
+  /**
+   * 返回上一页
+   *
+   * 注意：<webview>.goBack() 在 Electron 33 里会再派发一次 "back" 的 ipc-message，
+   * 如果页面里的桥也监听这个通道，就会再触发一次返回、连退两页。
+   * 这里改用 webContents 的导航历史，并加一个去抖窗口，保证一次点击只退一步。
+   */
+  let lastBackAt = 0
   bridge.registerHandler('back', async () => {
     const wv = getWebview()
-    if (wv && wv.canGoBack()) {
+    if (!wv) return
+    const now = Date.now()
+    if (now - lastBackAt < 400) {
+      log('[back] 忽略重复调用（400ms 去抖）')
+      return
+    }
+    lastBackAt = now
+    try {
+      if (!wv.canGoBack()) return
       wv.goBack()
+      log('[back] 返回上一页')
+    } catch (err) {
+      log('[back] 返回失败', err)
     }
   })
 
