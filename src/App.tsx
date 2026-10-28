@@ -283,6 +283,7 @@ function App() {
         // 后端接口与 wallet 地址直接沿用所选线上环境，不读取/覆盖凭据
         await window.appConfig?.setConfig({
           envMode: 'local',
+          localBackend: currentBackend,
           h5BaseUrl: preset.h5BaseUrl,
           walletUrl: backPreset.walletUrl,
           apiBaseUrl: backPreset.apiBaseUrl

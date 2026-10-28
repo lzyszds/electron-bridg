@@ -167,7 +167,10 @@ function registerBridgeIpc(): void {
       // 2. 仅对 QQLink 自家域名注入设备头 / 钱包鉴权。
       //    不能用 host.startsWith('api.')：美股行情会请求 api.xueqiu.com，
       //    误判成 Wallet 后会带上 Authorization、HMAC 签名，雪球直接 400。
-      const envMode = appConfig.envMode || 'prod'
+      // 本地模式的 H5 跑在 localhost，但账号与接口属于它选定的后端环境（auth_local.json 不存在），
+      // 所以读 token 时要回落到该后端环境，否则 token 全空 → 所有接口 401 → 被强制退出。
+      const rawEnvMode = appConfig.envMode || 'prod'
+      const envMode = rawEnvMode === 'local' ? (appConfig.localBackend || 'test') : rawEnvMode
       const deviceId = getMachineId()
       const userId = getUserID(envMode)
       const tokens = getAuthTokens(envMode)
@@ -584,7 +587,8 @@ function registerAuthIpc(): void {
     'auth:login',
     async (_event, params: LoginParams) => {
       const cfg = loadConfig()
-      const targetEnv = params.envMode || cfg.envMode || 'prod'
+      const requestedEnv = params.envMode || cfg.envMode || 'prod'
+      const targetEnv = requestedEnv === 'local' ? cfg.localBackend || 'test' : requestedEnv
       console.log(`[Auth IPC] >>> 收到前端登录请求 (${targetEnv}), 账号:`, params.email)
       try {
         const result = await loginApi(params)

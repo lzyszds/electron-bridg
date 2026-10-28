@@ -8,6 +8,7 @@ import { Settings, Globe, Server, ShieldCheck, X, Copy, Check } from 'lucide-rea
 
 export interface AppConfig {
   envMode?: 'prod' | 'test' | 'local'
+  localBackend?: 'prod' | 'test'
   h5BaseUrl: string
   webviewUrl: string
   lastModuleId?: string

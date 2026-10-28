@@ -52,6 +52,8 @@ export const ENV_PRESETS: Record<EnvMode, EnvPreset> = {
 export interface AppConfig {
   /** 运行环境模式：prod 正式环境 | test 测试环境全桥接 | local 本地开发 */
   envMode: EnvMode
+  /** local 模式下实际使用的后端环境（账号与接口走它），默认 test */
+  localBackend?: 'prod' | 'test'
   /** H5 镜像基础域名（如 https://module.qqlink.live 或 https://module.qqlink.buzz 或 http://localhost:3000） */
   h5BaseUrl: string
   /** 默认/最后访问的完整 URL */
@@ -123,6 +125,7 @@ function merge(base: AppConfig, patch: Partial<AppConfig>): AppConfig {
 
   return {
     envMode,
+    localBackend: patch.localBackend ?? base.localBackend ?? 'test',
     h5BaseUrl,
     webviewUrl,
     lastModuleId: patch.lastModuleId ?? base.lastModuleId ?? 'financial-usStocks',

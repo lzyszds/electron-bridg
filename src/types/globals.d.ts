@@ -46,6 +46,7 @@ interface ConfigApi {
 
 interface AppConfig {
   envMode?: 'prod' | 'test' | 'local'
+  localBackend?: 'prod' | 'test'
   webviewUrl: string
   apiBaseUrl: string
   walletUrl: string
