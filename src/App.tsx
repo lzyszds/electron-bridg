@@ -581,6 +581,10 @@ function App() {
     if (!wv) return
 
     const onIpcMessage = (event: Electron.IpcMessageEvent) => {
+      // 刷新/跳转是异步的：did-start-loading 先到，但 H5 新页面可能在旧监听器移除、
+      // 新监听器挂上之前就发出第一波请求（getNodeConfig / proxy）。以前这里直接丢弃，
+      // 表现就是「刷新后页面空数据、桥接无回包」。现在只复位等待队列、延迟派发，
+      // 保证新页面发出的请求一定有人接。
       if (event.channel === 'bridge-message' && bridgeRef.current) {
         bridgeRef.current.onMessageReceived(event.args[0] as string)
       }
@@ -601,8 +605,6 @@ function App() {
       // 任何一次加载（刷新/跳转/H5 自身 location 变化）都会销毁页面里的桥，
       // 统一在这里复位，等 H5 重新发 ready 再置回已就绪
       setBridgeReady(false)
-      // 换页后旧的请求回调全部作废，避免回包打到新页面的旧 id 上
-      bridgeRef.current?.resetPending()
     }
 
     const syncUrlFromWebview = () => {
@@ -641,6 +643,7 @@ function App() {
     }
 
     const onDomReady = () => {
+      // 新页面 dom-ready 时清一次旧的等待队列；此后到达的请求都是新页面发的，正常处理
       bridgeRef.current?.resetPending()
       wv.executeJavaScript(
         `${webviewPolyfills}\n${webviewBridgeSdk}\nwindow.__QQLINK_WEBVIEW__=true;`
