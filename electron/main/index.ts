@@ -31,7 +31,8 @@ import {
   fetchPubKey,
   encryptRequestData,
   getWalletSignSecret,
-  generateWalletSignature
+  generateWalletSignature,
+  refreshWalletSession
 } from './walletApi'
 import {
   isXueqiuHost,
@@ -290,9 +291,42 @@ function registerBridgeIpc(): void {
           }
         }
 
+        // 先打印「H5 已带签名」的原文，方便和本地 sign.ts 复算比对（这里不重新签名，避免改坏已通过的链路）
+        if (hasHeader('X-Signature')) {
+          const queryDump = Array.from(target.searchParams.entries())
+            .map(([k, v]) => `${k}=${v}`)
+            .join('&')
+          console.log(
+            `[Proxy Bridge] 沿用 H5 签名 ${method.toUpperCase()} ${target.pathname} | query="${queryDump}" | params=${JSON.stringify(params ?? null)} | ts=${headers['X-Timestamp'] ?? headers['x-timestamp']} nonce=${headers['X-Nonce'] ?? headers['x-nonce']} sig=${headers['X-Signature'] ?? headers['x-signature']}`
+          )
+        }
+
         // 对齐 Flutter WalletDio.genSign：无论 GET 还是 POST 请求，缺少签名头时均需计算注入
         if (!hasHeader('X-Signature')) {
-          let signData = (finalBody !== undefined && finalBody !== null) ? finalBody : params
+          // 签名数据必须和真正发出去的报文一致。
+          // 原写法「有 body 就用 body，否则用 params」：
+          //   1) GET 时 payload.body 若是空对象/空字符串，会把 query 顶掉 → 服务端签名失败-1；
+          //   2) H5 把 ?activityId=xx 直接拼进 url（appRequest.get），params 为空，
+          //      签名只剩 "ts&nonce" → 同样 401。
+          // Flutter: options.data ?? options.queryParameters。
+          // Dio 的 data 只在 POST 的 JSON body 里出现（见 wallet_dio.dart），GET 用 queryParameters；
+          // 空 body 视为没有 body。
+          const hasBody =
+            finalBody !== undefined &&
+            finalBody !== null &&
+            !(typeof finalBody === 'string' && finalBody.trim() === '') &&
+            !(typeof finalBody === 'object' && !Array.isArray(finalBody) && Object.keys(finalBody as object).length === 0)
+
+          let signData: unknown = hasBody ? finalBody : params
+          // GET/DELETE：参数以 query 为准。H5 可能把 query 拼进 url（appRequest.get），
+          // 此时 params 为空，需回读 target 上的 searchParams。
+          if (!hasBody && (method || '').toUpperCase() !== 'POST') {
+            const queryParams: Record<string, string> = {}
+            target.searchParams.forEach((v, k) => {
+              queryParams[k] = v
+            })
+            signData = Object.keys(queryParams).length > 0 ? queryParams : params
+          }
           if (typeof signData === 'string') {
             try {
               signData = JSON.parse(signData)
@@ -311,7 +345,17 @@ function registerBridgeIpc(): void {
             headers['X-Timestamp'] = String(signResult.timestamp)
             headers['X-Nonce'] = signResult.nonce
             headers['X-Signature'] = signResult.signature
-            console.log(`[Proxy Bridge] 成功为 Wallet 请求生成 HMAC-SHA256 签名 (X-Signature: ${signResult.signature.slice(0, 16)}...)`)
+            // 打印签名原文（不含 secret），服务端 401 签名失败时可据此逐字复算
+            const signPlain =
+              signData && typeof signData === 'object'
+                ? Object.keys(signData as Record<string, unknown>)
+                    .sort()
+                    .map((k) => `${(signData as Record<string, unknown>)[k]}`)
+                    .join('&')
+                : ''
+            console.log(
+              `[Proxy Bridge] 签名 ${method.toUpperCase()} ${target.origin}${target.pathname} 原文="${signPlain}&${signResult.timestamp}&${signResult.nonce}" -> ${signResult.signature}`
+            )
           } else {
             console.warn('[Proxy Bridge] 警告: 未能提取到 HMAC secretKey，无法生成 X-Signature!')
           }
@@ -608,6 +652,9 @@ function registerAuthIpc(): void {
   ipcMain.handle('auth:isLoggedIn', (_event, env?: any) => isTokenValid(env))
   ipcMain.handle('auth:getInfo', (_event, env?: any) => getAuthInfo(env))
   ipcMain.handle('auth:getTokens', (_event, env?: any) => getAuthTokens(env))
+  // H5 登录后内存里只有登录 token（不是钱包 token），用它请求 api.* 会「token解析失败-1」。
+  // 由主进程按 Flutter 的钱包页流程换取钱包 token，再把 token + 签名密钥交给 H5。
+  ipcMain.handle(BRIDGE_CHANNELS.WALLET_SESSION_REFRESH, () => refreshWalletSession())
   ipcMain.handle('auth:getUserID', (_event, env?: any) => getUserID(env))
 
   ipcMain.on('auth:logout', (_event, env?: any) => {

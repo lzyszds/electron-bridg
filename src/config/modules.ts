@@ -122,6 +122,15 @@ export const H5_MODULES: H5Module[] = [
     icon: '💳'
   },
   {
+    id: 'module-ucard',
+    name: '银行卡',
+    category: 'asset',
+    categoryName: '资产交易',
+    path: '/module/ucard',
+    description: '银行卡绑定、管理与账户出入金',
+    icon: '🏧'
+  },
+  {
     id: 'asset-guarantee',
     name: '担保交易',
     category: 'asset',
@@ -251,6 +260,15 @@ export const H5_MODULES: H5Module[] = [
   },
 
   // ===== 活动靓号 =====
+  {
+    id: 'activity-center',
+    name: '活动中心',
+    category: 'activity',
+    categoryName: '活动靓号',
+    path: '/module/event',
+    description: '限时/长期活动聚合、邀请活动与奖励进度',
+    icon: '🎪'
+  },
   {
     id: 'activity-vanitasNumber',
     name: '靓号商城',

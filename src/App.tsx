@@ -551,113 +551,151 @@ function App() {
       {/* ========================================================
           1. 全局顶部统领栏 (Apple Light Studio Header)
       ======================================================== */}
-      <header className="h-13 w-full flex items-center justify-between px-4 bg-white border-b border-slate-200 z-30 shrink-0 gap-3 shadow-xs">
-        {/* 左侧：品牌 Logo + 桥接状态 */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-cyan-500 flex items-center justify-center shadow-xs shadow-blue-500/20 shrink-0">
-              <Zap className="w-3.5 h-3.5 text-white fill-white" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold tracking-tight text-slate-900">
-                QQLink Studio
-              </span>
+      <header className="w-full shrink-0 z-30 bg-white border-b border-slate-200 shadow-xs">
+        {/* ─────────── 第一行：主控行（环境 / 导航 / 地址栏 / 账号） ─────────── */}
+        <div className="h-12 w-full flex items-center gap-3 px-4 border-b border-slate-100">
+          {/* 双模式切换胶囊开关 (正式环境 main vs 测试环境 test SPA 全桥接) */}
+          <div className="flex items-center rounded-lg bg-slate-100/90 p-0.5 border border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleRequestSwitchEnvMode('prod')}
+              className={cn(
+                'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
+                envMode === 'prod'
+                  ? 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              )}
+              title="正式环境 (新版 H5: https://module.qqlink.live)"
+            >
               <span
                 className={cn(
-                  'text-[9px] font-mono font-semibold px-1 py-0.2 rounded border transition-colors',
-                  envMode === 'test'
-                    ? 'bg-purple-50 text-purple-600 border-purple-200'
-                    : 'bg-blue-50 text-blue-600 border-blue-200'
+                  'w-1.5 h-1.5 rounded-full',
+                  envMode === 'prod' ? 'bg-blue-500' : 'bg-slate-300'
                 )}
-              >
-                {envMode === 'test' ? 'TEST (test)' : 'MAIN (live)'}
+              />
+              <span>正式 (main)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRequestSwitchEnvMode('test')}
+              className={cn(
+                'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
+                envMode === 'test'
+                  ? 'bg-white text-purple-600 shadow-xs border border-purple-200 font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
+              )}
+              title="测试环境 (test 分支 SPA 全桥接: https://module.qqlink.buzz)"
+            >
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  envMode === 'test' ? 'bg-purple-500' : 'bg-slate-300'
+                )}
+              />
+              <span>测试 (test)</span>
+            </button>
+          </div>
+
+          {/* 垂直分割线 */}
+          <div className="h-4 w-px bg-slate-200 shrink-0" />
+
+          {/* 地址栏区块：历史导航按钮 + 一体化 Omnibar（独占全部剩余宽度，永不挤压） */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {/* 历史前进后退刷新 */}
+            <div className="flex items-center rounded-lg bg-slate-100/80 p-0.5 border border-slate-200/80 shrink-0">
+              <NavBtn onClick={handleBack} disabled={!canGoBack} title="后退">
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </NavBtn>
+              <NavBtn onClick={handleForward} disabled={!canGoForward} title="前进">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </NavBtn>
+              <NavBtn onClick={handleRefresh} title="刷新当前页面">
+                <RotateCw className="w-3.5 h-3.5" />
+              </NavBtn>
+            </div>
+
+            {/* 地址栏输入框 (集成一键复制与快捷跳转) */}
+            <form
+              className="flex items-center flex-1 min-w-[240px] bg-slate-50 hover:bg-slate-100/60 focus-within:bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 border border-slate-200/80 rounded-lg h-8 px-2.5 transition-all"
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleNavigate()
+              }}
+            >
+              <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-1.5" />
+              <input
+                type="text"
+                value={inputUrl}
+                onChange={(e) => setInputUrl(e.target.value)}
+                placeholder="输入 H5 页面完整路由或相对路径..."
+                className="w-full bg-transparent text-xs text-slate-800 placeholder:text-slate-400 font-mono outline-none min-w-0"
+              />
+              <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                <button
+                  type="button"
+                  onClick={handleCopyUrl}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                  title="复制当前完整 URL"
+                >
+                  {copied ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <button
+                  type="submit"
+                  className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                  title="前往此页面 (Enter 回车)"
+                >
+                  <CornerDownLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* 垂直分割线 */}
+          <div className="h-4 w-px bg-slate-200 shrink-0" />
+
+          {/* 账号操作区：当前登录用户 / 设置 / 退出 */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* 当前登录用户标识 */}
+            <div
+              className="flex items-center gap-1.5 rounded-lg bg-slate-100/80 border border-slate-200/80 px-2.5 py-1 text-xs font-mono text-slate-700 select-none shrink-0"
+              title={`当前登录 User ID: ${userID || '未登录'}`}
+            >
+              <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-black text-white shrink-0">
+                U
+              </span>
+              <span className="max-w-[80px] truncate font-semibold">
+                {userID || '未登录'}
               </span>
             </div>
-          </div>
 
-          {/* 桥接就绪状态指示器 */}
-          <div
-            className={cn(
-              'flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all',
-              bridgeReady
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
-            )}
-            title={bridgeReady ? 'H5 JSBridge 已建立通信' : '等待 H5 JSBridge 注入...'}
-          >
-            <span
-              className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                bridgeReady ? 'bg-emerald-500 shadow-[0_0_5px_#10b981]' : 'bg-amber-500'
-              )}
-            />
-            <span>{bridgeReady ? 'Ready' : 'Connecting'}</span>
+            {/* 设置按钮 */}
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors cursor-pointer shrink-0"
+              title="应用与 H5 域名环境配置"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
+            {/* 退出登录 */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 transition-colors cursor-pointer shrink-0"
+              title="退出登录"
+            >
+              <Power className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        {/* 垂直分割线 */}
-        <div className="h-4 w-px bg-slate-200 shrink-0" />
-
-        {/* 双模式切换胶囊开关 (正式环境 main vs 测试环境 test SPA 全桥接) */}
-        <div className="flex items-center rounded-lg bg-slate-100/90 p-0.5 border border-slate-200 shrink-0">
-          <button
-            type="button"
-            onClick={() => handleRequestSwitchEnvMode('prod')}
-            className={cn(
-              'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
-              envMode === 'prod'
-                ? 'bg-white text-blue-600 shadow-xs border border-blue-200 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            )}
-            title="正式环境 (新版 H5: https://module.qqlink.live)"
-          >
-            <span
-              className={cn(
-                'w-1.5 h-1.5 rounded-full',
-                envMode === 'prod' ? 'bg-blue-500' : 'bg-slate-300'
-              )}
-            />
-            <span>正式 (main)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRequestSwitchEnvMode('test')}
-            className={cn(
-              'px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
-              envMode === 'test'
-                ? 'bg-white text-purple-600 shadow-xs border border-purple-200 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            )}
-            title="测试环境 (test 分支 SPA 全桥接: https://module.qqlink.buzz)"
-          >
-            <span
-              className={cn(
-                'w-1.5 h-1.5 rounded-full',
-                envMode === 'test' ? 'bg-purple-500' : 'bg-slate-300'
-              )}
-            />
-            <span>测试 (test)</span>
-          </button>
-        </div>
-
-        {/* 垂直分割线 */}
-        <div className="h-4 w-px bg-slate-200 shrink-0" />
-
-        {/* 中间：一体化地址导航栏 (Omnibar) */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* 历史前进后退刷新 */}
-          <div className="flex items-center rounded-lg bg-slate-100/80 p-0.5 border border-slate-200/80 shrink-0">
-            <NavBtn onClick={handleBack} disabled={!canGoBack} title="后退">
-              <ArrowLeft className="w-3.5 h-3.5" />
-            </NavBtn>
-            <NavBtn onClick={handleForward} disabled={!canGoForward} title="前进">
-              <ArrowRight className="w-3.5 h-3.5" />
-            </NavBtn>
-            <NavBtn onClick={handleRefresh} title="刷新当前页面">
-              <RotateCw className="w-3.5 h-3.5" />
-            </NavBtn>
-          </div>
-
+        {/* ─────────── 第二行：上下文与开发者工具行 ─────────── */}
+        <div className="h-10 w-full flex items-center gap-2 px-4 bg-slate-50/70">
           {/* 快捷模块分类下拉列表 (使用组件库 Select 下拉组件) */}
           <Select
             value={currentModuleId}
@@ -666,7 +704,7 @@ function App() {
               if (mod) handleSelectModule(mod)
             }}
           >
-            <SelectTrigger className="h-8 w-auto min-w-[140px] max-w-[180px] bg-slate-50 hover:bg-slate-100/80 border-slate-200/80 text-xs font-semibold text-slate-800 shrink-0 gap-1.5 px-2.5">
+            <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[220px] bg-white hover:bg-slate-100 border-slate-200/80 text-xs font-semibold text-slate-800 shrink-0 gap-1.5 px-2.5">
               <div className="flex items-center gap-1.5 truncate">
                 <Boxes className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <span className="truncate">{currentModule.name}</span>
@@ -699,51 +737,12 @@ function App() {
             </SelectContent>
           </Select>
 
-          {/* 地址栏输入框 (集成一键复制与快捷跳转) */}
-          <form
-            className="flex items-center flex-1 min-w-[200px] bg-slate-50 hover:bg-slate-100/60 focus-within:bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 border border-slate-200/80 rounded-lg h-8 px-2.5 transition-all"
-            onSubmit={(e) => {
-              e.preventDefault()
-              handleNavigate()
-            }}
-          >
-            <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-1.5" />
-            <input
-              type="text"
-              value={inputUrl}
-              onChange={(e) => setInputUrl(e.target.value)}
-              placeholder="输入 H5 页面完整路由或相对路径..."
-              className="w-full bg-transparent text-xs text-slate-800 placeholder:text-slate-400 font-mono outline-none min-w-0"
-            />
-            <div className="flex items-center gap-1 shrink-0 ml-1.5">
-              <button
-                type="button"
-                onClick={handleCopyUrl}
-                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                title="复制当前完整 URL"
-              >
-                {copied ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-              </button>
-              <button
-                type="submit"
-                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                title="前往此页面 (Enter 回车)"
-              >
-                <CornerDownLeft className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </form>
-
           {/* 设备机型选择 (使用组件库 Select 下拉组件) */}
           <Select
             value={bridgeConfig.deviceId}
             onValueChange={(val) => bridgeConfig.setConfig('deviceId', val)}
           >
-            <SelectTrigger className="h-8 w-auto min-w-[130px] bg-slate-50 hover:bg-slate-100/80 border-slate-200/80 text-xs font-medium text-slate-700 shrink-0 gap-1.5 px-2.5">
+            <SelectTrigger className="h-7 w-auto min-w-[150px] bg-white hover:bg-slate-100 border-slate-200/80 text-xs font-medium text-slate-700 shrink-0 gap-1.5 px-2.5">
               <div className="flex items-center gap-1.5 truncate">
                 <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span className="truncate">{device.name}</span>
@@ -765,19 +764,16 @@ function App() {
               </SelectGroup>
             </SelectContent>
           </Select>
-        </div>
 
-        {/* 垂直分割线 */}
-        <div className="h-4 w-px bg-slate-200 shrink-0" />
+          {/* 弹性占位：把开发者工具组推向右侧 */}
+          <div className="flex-1 min-w-2" />
 
-        {/* 右侧：DevTools 调试工具 + 日志开关 + 用户状态 + 设置 */}
-        <div className="flex items-center gap-2 shrink-0">
           {/* 开发者工具按钮组 */}
-          <div className="flex items-center rounded-lg bg-slate-100/80 p-0.5 border border-slate-200/80 shrink-0">
+          <div className="flex items-center rounded-lg bg-white p-0.5 border border-slate-200/80 shrink-0">
             <button
               type="button"
               onClick={() => window.bridge?.toggleWebviewDevTools?.()}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium text-slate-700 hover:text-blue-600 hover:bg-white transition-all cursor-pointer"
+              className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-xs font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
               title="切换 H5 网页内嵌控制台 (审查元素/断点/网络)"
             >
               <Bug className="w-3.5 h-3.5 text-blue-500" />
@@ -786,7 +782,7 @@ function App() {
             <button
               type="button"
               onClick={() => window.bridge?.toggleDevTools?.()}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white transition-all cursor-pointer"
+              className="flex items-center gap-1.5 h-6 px-2.5 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all cursor-pointer"
               title="切换主窗口控制台 (F12 / Cmd+Opt+I)"
             >
               <Code className="w-3.5 h-3.5 text-slate-500" />
@@ -799,51 +795,15 @@ function App() {
             type="button"
             onClick={() => setShowLogPanel(!showLogPanel)}
             className={cn(
-              'h-8 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer border shrink-0',
+              'h-7 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer border shrink-0',
               showLogPanel
                 ? 'bg-blue-50 text-blue-600 border-blue-200 font-semibold'
-                : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50'
+                : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200/80 hover:bg-slate-100'
             )}
             title="显示/隐藏控制台与桥接日志面板"
           >
             <Terminal className="w-3.5 h-3.5" />
             <span>日志</span>
-          </button>
-
-          {/* 垂直分割线 */}
-          <div className="h-4 w-px bg-slate-200 shrink-0" />
-
-          {/* 当前登录用户标识 */}
-          <div
-            className="flex items-center gap-1.5 rounded-lg bg-slate-100/80 border border-slate-200/80 px-2.5 py-1 text-xs font-mono text-slate-700 select-none shrink-0"
-            title={`当前登录 User ID: ${userID || '未登录'}`}
-          >
-            <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-black text-white shrink-0">
-              U
-            </span>
-            <span className="max-w-[80px] truncate font-semibold">
-              {userID || '未登录'}
-            </span>
-          </div>
-
-          {/* 设置按钮 */}
-          <button
-            type="button"
-            onClick={() => setShowSettings(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors cursor-pointer shrink-0"
-            title="应用与 H5 域名环境配置"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          {/* 退出登录 */}
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 transition-colors cursor-pointer shrink-0"
-            title="退出登录"
-          >
-            <Power className="w-4 h-4" />
           </button>
         </div>
       </header>
