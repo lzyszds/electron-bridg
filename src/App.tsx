@@ -55,6 +55,9 @@ import { cn } from './lib/utils'
 
 type PageState = 'checking' | 'login' | 'main'
 
+/** 记录「用户主动退出登录」的环境，避免重启后被残留 token 自动带回主页 */
+const LOGGED_OUT_KEY = 'qqlink_logged_out_env'
+
 function App() {
   const [pageState, setPageState] = useState<PageState>('checking')
   const [userID, setUserID] = useState('')
@@ -100,6 +103,8 @@ function App() {
   const syncTokensAndEnterMain = useCallback(
     async (uid: string, curEnv?: EnvMode) => {
       const mode = curEnv || envMode
+      // 登录成功（含自动登录）后解除「已主动退出」标记
+      localStorage.removeItem(LOGGED_OUT_KEY)
       setUserID(uid)
       try {
         const tokens = await window.auth.getAuthTokens(mode)
@@ -237,6 +242,13 @@ function App() {
       try {
         const curEnv = (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
         setEnvMode(curEnv)
+        // 用户主动退出过的环境不再自动登录：即使磁盘上还残留 token（例如退出时 IPC 尚未落盘、
+        // 或被其它窗口重新写回），也必须停在登录页，直到重新登录成功才解除标记。
+        const loggedOutEnv = localStorage.getItem(LOGGED_OUT_KEY)
+        if (loggedOutEnv && loggedOutEnv === curEnv) {
+          setPageState('login')
+          return
+        }
         const loggedIn = await auth.isLoggedIn(curEnv)
         if (loggedIn) {
           const info = await auth.getAuthInfo(curEnv)
@@ -275,6 +287,8 @@ function App() {
   const resetAuthState = useCallback(
     (reason: string, targetEnv?: EnvMode) => {
       const mode = targetEnv || envMode
+      // 先打标记再清 token：启动时的自动登录会据此直接停在登录页
+      localStorage.setItem(LOGGED_OUT_KEY, mode)
       window.auth?.logout(mode)
       const bridgeStore = useBridgeStore.getState()
       bridgeStore.clearAuth()

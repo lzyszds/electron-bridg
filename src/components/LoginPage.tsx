@@ -82,6 +82,7 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
     // 停在登录页就意味着当前环境未登录：清掉该环境残留的 token，
     // 否则刷新/重启会又被自动登录带进主页。只清当前环境，不影响其它环境已保存的登录态。
     window.auth?.logout(mode)
+    localStorage.setItem('qqlink_logged_out_env', mode)
   }
 
   useEffect(() => {
