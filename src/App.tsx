@@ -206,6 +206,8 @@ function App() {
 
   // 待切换的目标环境模式（非 null 时唤起二次确认提醒弹窗）
   const [pendingEnvMode, setPendingEnvMode] = useState<EnvMode | null>(null)
+  /** 最近一次被强制退回登录页的原因，用于在登录页顶部提示 */
+  const [logoutReason, setLogoutReason] = useState<string>('')
   /** 本地 H5 开关（与正式/测试并联，不改变 envMode） */
   const [localEnabled, setLocalEnabled] = useState<boolean>(
     () => localStorage.getItem(LOCAL_ENABLED_KEY) === '1'
@@ -386,6 +388,7 @@ function App() {
 
   // ===== 登录成功后进入主界面 =====
   const handleLoginSuccess = async (data: { token: string; userID: string }, fromEnv?: EnvMode) => {
+    setLogoutReason('')
     const curEnv = fromEnv || envMode
     setEnvMode(curEnv)
     await syncTokensAndEnterMain(data.userID, curEnv)
@@ -407,6 +410,7 @@ function App() {
       window.auth?.logout(mode)
       const bridgeStore = useBridgeStore.getState()
       bridgeStore.clearAuth()
+      setLogoutReason(reason)
       setUserID('')
       setUrl('')
       setInputUrl('')
@@ -423,7 +427,7 @@ function App() {
 
   // ===== 退出登录 =====
   const handleLogout = useCallback(() => {
-    resetAuthState('用户主动退出')
+    resetAuthState('用户主动退出登录')
   }, [resetAuthState])
 
   /**

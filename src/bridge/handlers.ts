@@ -603,9 +603,15 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
   }
 
   // 首次进入时拉一次连接状态，连接器不至于显示为空白
-  void window.bridge?.getUsStockWsStatus?.().then((status) => {
-    if (status) log('[usStockWs] 当前连接状态', status)
-  })
+  // 主进程未注册该 IPC（精简版宿主）时会直接 reject，这里必须吞掉，否则控制台一片报错
+  void window.bridge
+    ?.getUsStockWsStatus?.()
+    .then((status) => {
+      if (status) log('[usStockWs] 当前连接状态', status)
+    })
+    .catch((err) => {
+      log('[usStockWs] 获取连接状态失败（主进程未注册该通道，可忽略）', err)
+    })
 
   // 监听来自主进程的 WS 推送，并回调 H5 的 onWalletMessage
   if (window.bridge?.onWalletWsMessage) {

@@ -13,6 +13,8 @@ import { cn } from '../lib/utils'
 interface LoginPageProps {
   onLoginSuccess: (data: { token: string; userID: string }, envMode?: EnvMode) => void
   initialEnvMode?: EnvMode
+  /** 被强制退回登录页的原因（token 失效等），为空表示主动进入 */
+  notice?: string
 }
 
 interface VerifyState {
@@ -24,7 +26,7 @@ const getAccountKey = (mode: string) => `qqlink_last_account_${mode}`
 const getPasswordKey = (mode: string) => `qqlink_last_password_${mode}`
 const getRememberKey = (mode: string) => `qqlink_remember_me_${mode}`
 
-function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
+function LoginPage({ onLoginSuccess, initialEnvMode, notice }: LoginPageProps) {
   const [envMode, setEnvMode] = useState<EnvMode>(() => {
     return initialEnvMode || (localStorage.getItem('qqlink_env_mode') as EnvMode) || 'prod'
   })
@@ -265,6 +267,17 @@ function LoginPage({ onLoginSuccess, initialEnvMode }: LoginPageProps) {
             请登录您的 QQLink 账号
           </p>
         </div>
+
+        {/* 被强制退回登录页的提示（token 失效、网页请求重新登录等），避免用户无感被踢 */}
+        {notice && (
+          <div className="mx-8 mb-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300">
+            <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+            <div className="min-w-0">
+              <p className="font-semibold">登录状态已失效，已被强制退出</p>
+              <p className="mt-0.5 break-words opacity-90">{notice}</p>
+            </div>
+          </div>
+        )}
 
         {/* 表单 */}
         <form onSubmit={handleSubmit} className="space-y-4 p-8 pt-2">
