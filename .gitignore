@@ -48,3 +48,7 @@ build/icon.iconset/
 *.pem
 *.key
 macmini*
+
+# TypeScript 增量构建缓存（不应提交）
+*.tsbuildinfo
+.DS_Store
