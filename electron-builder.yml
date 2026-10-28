@@ -1,0 +1,111 @@
+# electron-builder 打包配置
+# 文档：https://www.electron.build/configuration/configuration
+#
+# 本地打包命令见 package.json 的 build:* 脚本，详细说明见 docs/BUILD.md
+
+appId: com.qqlink.h5-electron-bridge
+productName: QQLink H5 Bridge
+copyright: Copyright © 2025 qqlink
+
+directories:
+  output: release
+  buildResources: build
+
+# 打包进 app.asar 的内容：只放构建产物，生产依赖由 electron-builder 按依赖树自动收集
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/*.{md,markdown}'
+
+asar: true
+
+# 产物命名：QQLink-H5-Bridge-1.0.0-mac-arm64.dmg
+artifactName: QQLink-H5-Bridge-${version}-${os}-${arch}.${ext}
+
+# 网络受限时可切换 Electron 二进制镜像（不改配置，走环境变量即可）：
+# ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run build:mac
+
+# 图标按约定自动从 buildResources（即 build/）目录读取，无需显式配置：
+#   macOS -> build/icon.icns   Windows -> build/icon.ico   Linux -> build/icon.png
+# 用 `npm run icons` 生成；若文件不存在则退回 Electron 默认图标（仅告警，不会打包失败）
+
+# ----------------------------------- macOS -----------------------------------
+mac:
+  category: public.app-category.developer-tools
+  darkModeSupport: true
+  # 本地打包默认不签名。
+  # 原因：钥匙串里若存在已吊销/过期的证书，electron-builder 会自动拿去签名，
+  # 随后 codesign --verify 报 CSSMERR_TP_CERT_REVOKED 导致打包失败。
+  # 有可用的 Developer ID 证书、需要签名分发时，把下面这行删掉（或改成证书名：
+  # identity: "Developer ID Application: XXX (TEAMID)"）。
+  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # 未签名时关闭公证，避免打包报错（有证书并需要公证时改为 true 并配置 APPLE_ID 等环境变量）
+  notarize: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  extendInfo:
+    NSCameraUsageDescription: 需要访问摄像头以调试 H5 页面能力
+    NSMicrophoneUsageDescription: 需要访问麦克风以调试 H5 页面能力
+
+dmg:
+  title: ${productName} ${version}
+  window:
+    width: 540
+    height: 380
+  contents:
+    # 省略 path 的条目即应用本体
+    - x: 140
+      y: 190
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
+
+# ---------------------------------- Windows ----------------------------------
+win:
+  executableName: QQLinkH5Bridge
+  publisherName: qqlink
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - arm64
+
+nsis:
+  # 非一键安装：允许用户选择安装目录
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: QQLink H5 Bridge
+  # 安装程序图标默认跟随应用图标（build/icon.ico）
+  deleteAppDataOnUninstall: false
+  # 2052 = 简体中文
+  language: '2052'
+  installerLanguages:
+    - zh_CN
+    - en_US
+  artifactName: QQLink-H5-Bridge-Setup-${version}-${arch}.${ext}
+
+# ----------------------------------- Linux -----------------------------------
+# 可选目标，不影响 mac / win 打包
+linux:
+  category: Development
+  target:
+    - AppImage
