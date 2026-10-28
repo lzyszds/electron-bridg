@@ -112,7 +112,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     const defaultCfg: AppConfig = {
       envMode: 'prod',
       h5BaseUrl: 'https://module.qqlink.live',
-      webviewUrl: 'https://module.qqlink.live/zh-hans/financial/usStocks?safeArea=50&vconsole=yes',
+      webviewUrl: 'https://module.qqlink.live/zh-hans/financial/usStocks?safeArea=0&vconsole=yes',
       lastModuleId: 'financial-usStocks',
       locale: 'zh-hans',
       withDebugParams: true,
@@ -358,7 +358,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                       className="rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span className="text-xs text-zinc-600 dark:text-zinc-300">
-                      自动追加 safeArea=50 & vconsole=yes
+                      勾选追加 safeArea=50 & vconsole=yes；不勾选默认 safeArea=0
                     </span>
                   </label>
                 </div>

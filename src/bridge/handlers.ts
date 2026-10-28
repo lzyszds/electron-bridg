@@ -1,8 +1,47 @@
 import type { WebviewTag } from 'electron'
 import { JsBridge } from './jsbridge'
 import { DEFAULT_PUB_KEY, type BridgeConfig, type ElectronWirePayload, type LogLevel } from './types'
-import { getDeviceProfile } from './device-profiles'
+import { getDeviceProfile, type DevicePlatform } from './device-profiles'
 import type { HttpResponseResult } from '../../electron/shared/bridge'
+import type { WsMessageEvent, WsStatusEvent } from '../../electron/shared/ws'
+
+/**
+ * getAppInfo 回传的宿主 App 信息（H5 侧按 appName 区分品牌，必须严格对齐大小写）
+ *
+ * 取值由客户端约定：version 形如 `v2.0.01`，appName 只允许以下四种品牌：
+ *   qqlink / qqlinkpro / qqlinkplus / qqlive
+ *
+ * 后续字段按需增量追加（例如 buildNumber、platform），H5 只读它需要的键，
+ * 新增字段不会影响已接入的版本。
+ */
+const APP_INFO = {
+  /** 宿主 App 版本号，带 v 前缀 */
+  version: 'v2.0.01',
+  /** 宿主 App 品牌名 */
+  appName: 'qqlink'
+} as const
+
+/**
+ * 模拟机型的语言/地区（Flutter DeviceInfoHelper 读取系统 Locale）
+ *
+ * TODO: 需要多语言联调时改为跟随 appConfig.locale（zh-hans / zh-hant / en），
+ * 并同步把 `zh-CN` 换成对应的 `zh_CN` / `en_US` 形式。
+ */
+const APP_LANGUAGE = 'zh_CN'
+
+/** 取本机时区偏移串（如 GMT+08:00），失败时兜底东八区 */
+function resolveTimeZoneOffset(): string {
+  try {
+    const offsetMin = -new Date().getTimezoneOffset()
+    const sign = offsetMin >= 0 ? '+' : '-'
+    const abs = Math.abs(offsetMin)
+    const hh = String(Math.floor(abs / 60)).padStart(2, '0')
+    const mm = String(abs % 60).padStart(2, '0')
+    return `GMT${sign}${hh}:${mm}`
+  } catch {
+    return 'GMT+08:00'
+  }
+}
 
 export interface HandlerDeps {
   /** 获取当前 webview 实例 */
@@ -21,6 +60,15 @@ export interface HandlerDeps {
   }) => void
   /** Token 错误或过期回调 */
   onAuthExpired?: (reason?: string) => void
+  /** 带来源 / 级别 / 方向的日志写入（WS 行情等） */
+  onLog?: (entry: {
+    source: 'ws'
+    level: LogLevel
+    direction?: 'in' | 'out'
+    action?: string
+    message: string
+    detail?: unknown
+  }) => void
 }
 
 /**
@@ -67,10 +115,9 @@ function extractUrl(data: unknown): string | undefined {
   return undefined
 }
 
-function resolvePlatform(config: BridgeConfig): 'android' | 'ios' {
+function resolvePlatform(config: BridgeConfig): DevicePlatform {
   if (config.auth.platform !== 'auto') return config.auth.platform
-  const device = getDeviceProfile(config.deviceId)
-  return /iphone|ios/i.test(device.name) ? 'ios' : 'android'
+  return getDeviceProfile(config.deviceId).platform
 }
 
 function buildAuthData(config: BridgeConfig): Record<string, unknown> {
@@ -95,6 +142,68 @@ function buildAuthData(config: BridgeConfig): Record<string, unknown> {
  */
 export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
   const { getWebview, getConfig, log } = deps
+  /** 带来源/级别/方向的日志（WS 行情标签需要） */
+  const addLog = deps.onLog ?? (() => {})
+
+  /** WS 推送：写入调试日志（WS 行情标签），并交给连接器 / 页面做状态同步 */
+  const handleWsMessage = (event: WsMessageEvent) => {
+    const msg = event?.data
+    const isAck = !!msg && typeof msg === 'object' && 'event' in (msg as Record<string, unknown>)
+    const ack = msg as { event?: string; code?: string; msg?: string } | undefined
+    if (isAck) {
+      const ok = ack?.code === '0'
+      addLog({
+        source: 'ws',
+        level: ok ? 'info' : 'warn',
+        direction: 'in',
+        action: `${event.kind}:${ack?.event}`,
+        message: `← 订阅回执 ${ack?.event} code=${ack?.code}${ack?.msg ? ` msg=${ack.msg}` : ''}`,
+        detail: msg
+      })
+    } else {
+      addLog({
+        source: 'ws',
+        level: 'log',
+        direction: 'in',
+        action: `${event.kind}:action`,
+        message: `← 行情推送 ${describeAction(msg)}`,
+        detail: msg
+      })
+    }
+  }
+
+  const handleWsStatus = (status: WsStatusEvent) => {
+    const level = status.status === 'error' || status.status === 'login-fail' ? 'warn' : 'info'
+    const label: Record<string, string> = {
+      connected: '已连接',
+      closed: '已关闭',
+      error: '异常',
+      login: '登录成功',
+      'login-fail': '登录失败'
+    }
+    addLog({
+      source: 'ws',
+      level,
+      action: `${status.kind}:${status.status}`,
+      message: `WS ${status.kind === 'public' ? '公共行情' : '私有频道'} ${label[status.status] ?? status.status}`,
+      detail: status.detail
+    })
+  }
+
+  /** 行情 action 消息的一行摘要：action / instId / 关键字段 */
+  const describeAction = (msg: unknown): string => {
+    if (!msg || typeof msg !== 'object') return String(msg)
+    const obj = msg as {
+      action?: string
+      channel?: string
+      arg?: { instId?: string; channel?: string }
+      data?: unknown
+    }
+    const parts = [obj.action, obj.channel ?? obj.arg?.channel, obj.arg?.instId].filter(Boolean)
+    const data = obj.data
+    const first = Array.isArray(data) ? data[0] : data
+    return `${parts.join(' / ')} ${first && typeof first === 'object' ? JSON.stringify(first).slice(0, 120) : ''}`.trim()
+  }
 
   const mock = (name: string, handler?: (data: unknown) => unknown) => {
     bridge.registerHandler(name, async (data) => {
@@ -212,6 +321,36 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     return { data: payload }
   })
 
+  /**
+   * 获取宿主 App 信息（品牌 + 版本）
+   *
+   * 与客户端约定：只回传 H5 需要的字段，后续增量追加，避免把设备/系统信息
+   * 也塞进来造成两端字段口径漂移。H5 用 appName 区分品牌、version 做升级判断。
+   */
+  bridge.registerHandler('getAppInfo', async () => {
+    const payload = { ...APP_INFO }
+    log('[getAppInfo]', payload)
+    // 兼容 H5 直接读 res.version / res.data.version 两种取值风格（与 getAuth 一致）
+    return { ...payload, data: payload }
+  })
+
+  /**
+   * 获取设备时区：Flutter 端 getDeviceTimeZone 返回的是偏移串（GMT+08:00），不是 IANA 名
+   */
+  bridge.registerHandler('getDeviceTimeZone', async () => {
+    const timeZone = resolveTimeZoneOffset()
+    log(`[getDeviceTimeZone] ${timeZone}`)
+    return timeZone
+  })
+
+  /**
+   * 获取 App 语言：Flutter 端返回下划线形式（zh_CN / en_US）
+   */
+  bridge.registerHandler('getAppLanguage', async () => {
+    log(`[getAppLanguage] ${APP_LANGUAGE}`)
+    return APP_LANGUAGE
+  })
+
   // 跳转聊天（mock）
   mock('toChat')
 
@@ -276,7 +415,7 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
       const locale = u.pathname.match(/^\/([^/]+)\//)?.[1] || 'zh-hans'
       const next = new URL(`/${locale}${path.startsWith('/') ? path : `/${path}`}`, u.origin)
       if (u.searchParams.has('safeArea')) {
-        next.searchParams.set('safeArea', u.searchParams.get('safeArea') || '50')
+        next.searchParams.set('safeArea', u.searchParams.get('safeArea') || '0')
       }
       if (u.searchParams.has('vconsole')) {
         next.searchParams.set('vconsole', u.searchParams.get('vconsole') || 'yes')
@@ -451,6 +590,19 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     return result
   })
 
+  // 监听来自主进程的美股行情 WS 推送（webview preload 已直接回调 H5，这里负责日志与连接器状态）
+  if (window.bridge?.onUsStockWsMessage) {
+    window.bridge.onUsStockWsMessage((event) => handleWsMessage(event))
+    window.bridge.onUsStockWsStatus?.((status) => {
+      handleWsStatus(status)
+    })
+  }
+
+  // 首次进入时拉一次连接状态，连接器不至于显示为空白
+  void window.bridge?.getUsStockWsStatus?.().then((status) => {
+    if (status) log('[usStockWs] 当前连接状态', status)
+  })
+
   // 监听来自主进程的 WS 推送，并回调 H5 的 onWalletMessage
   if (window.bridge?.onWalletWsMessage) {
     window.bridge.onWalletWsMessage((msg) => {
@@ -462,7 +614,7 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
         detail: msg,
         wire: {
           channel: 'walletWs',
-          action: 'onWalletMessage',
+          action: 'onWalletMessage', // 与 bridge-preload 的私有行情回调名保持一致（H5 注册的是 onStockListener）
           status: 200,
           response: {
             data: msg
@@ -492,9 +644,41 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     return false
   })
 
-  // 美股订阅（mock）
-  bridge.registerHandler('usStockPublic', async (data) => {
-    log('[usStockPublic]', data)
+  /**
+   * 美股行情订阅：H5 下发 { op, args:[{instType, channel, instId}] }
+   * 交给 webview preload → 主进程美股行情 WS，行情推送由 preload 回调 onUsStockMessage。
+   */
+  bridge.registerHandler('usStockPublic', async (rawPayload) => {
+    const payload =
+      rawPayload && typeof rawPayload === 'object' && 'data' in (rawPayload as any)
+        ? (rawPayload as any).data
+        : rawPayload
+    const text = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {})
+    const wsType = (payload && typeof payload === 'object' && (payload as any).wsType) || undefined
+    ;(window as any).__USSTOCK_WS__?.send(text, wsType)
+    log(`[usStockPublic] -> 美股行情 WS`, payload)
+    addLog({
+      source: 'ws',
+      level: 'info',
+      direction: 'out',
+      action: 'h5:usStockPublic',
+      message: `→ H5 下发订阅: ${text.slice(0, 300)}`,
+      detail: payload
+    })
+
+    deps.logWire?.({
+      action: 'usStockPublic',
+      message: `美股订阅指令下发: ${text}`,
+      level: 'info',
+      detail: payload,
+      wire: {
+        channel: 'usStockWs',
+        action: 'usStockPublic',
+        status: 200,
+        request: { body: payload },
+        response: { data: { success: true } }
+      }
+    })
     return true
   })
 

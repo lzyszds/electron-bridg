@@ -434,11 +434,16 @@ export function buildModuleUrl(
       if (!url.searchParams.has('vconsole')) {
         url.searchParams.set('vconsole', 'yes')
       }
+    } else {
+      // 不勾选调试参数时显式下发 safeArea=0：
+      // H5 的 CustomMobileHeader 只认 safeArea 决定顶部留白，参数缺失会回落到本地缓存里的旧值（如 50），
+      // 所以这里不能简单省略，必须钉成 0。
+      url.searchParams.set('safeArea', '0')
     }
     return url.toString()
   } catch {
     // 降级返回
-    const qs = withDebugParams ? '?channel=qqlink&safeArea=50&vconsole=yes' : '?channel=qqlink'
+    const qs = withDebugParams ? '?channel=qqlink&safeArea=50&vconsole=yes' : '?channel=qqlink&safeArea=0'
     return `${fullUrlStr}${qs}`
   }
 }
