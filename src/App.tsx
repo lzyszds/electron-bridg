@@ -660,7 +660,8 @@ function App() {
     const injectBridge = () => {
       if (!wv.getWebContentsId) return
       wv.executeJavaScript(
-        `(function(){ if (window.WebViewJSBridge) return 'ok';
+        // 用「有没有 onMessageReceived」判断，H5 的 `var WebViewJSBridge;` 占位声明不算桥
+        `(function(){ if (window.WebViewJSBridge && typeof window.WebViewJSBridge.onMessageReceived === 'function') return 'ok';
            ${webviewPolyfills}
            ${webviewBridgeSdk}
            window.__QQLINK_WEBVIEW__=true; return 'injected'; })()`

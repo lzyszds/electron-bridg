@@ -243,7 +243,11 @@ export const webviewBridgeSdk = `(function () {
     };
   }
 
-  if (window.WebViewJSBridge) {
+  // 注意不能写成 if (window.WebViewJSBridge) { return; }
+  // 线上 H5 的 index.html 里有 "var WebViewJSBridge;" 的占位声明，页面里已经存在同名变量，
+  // 但这不等于桥已经建好。刷新时宿主再次注入会被这里直接忽略，H5 就永远拿不到 callHandler。
+  // 判断标准改为「是不是我们建的那个实例」（有 onMessageReceived 方法）。
+  if (window.WebViewJSBridge && typeof window.WebViewJSBridge.onMessageReceived === 'function') {
     return;
   }
   window.WebViewJSBridge = new JSBridge();
