@@ -642,13 +642,61 @@ function App() {
       syncUrlFromWebview()
     }
 
+    /**
+     * 桥接 SDK 注入
+     *
+     * 线上 H5 自己在首屏就调 nativeCall，如果 SDK 没在它之前就位，那一波请求就发不出来
+     * （刷新后偶发空数据就是这个原因）。所以 dom-ready 立刻注入一次，再用轮询兜底：
+     * 页面里已有 WebViewJSBridge 就停，没有就继续补，最多补一段时间。
+     */
+    let injectTimer: ReturnType<typeof setInterval> | null = null
+    let injectAttempts = 0
+    const stopInject = () => {
+      if (injectTimer) {
+        clearInterval(injectTimer)
+        injectTimer = null
+      }
+    }
+    const injectBridge = () => {
+      if (!wv.getWebContentsId) return
+      wv.executeJavaScript(
+        `(function(){ if (window.WebViewJSBridge) return 'ok';
+           ${webviewPolyfills}
+           ${webviewBridgeSdk}
+           window.__QQLINK_WEBVIEW__=true; return 'injected'; })()`
+      )
+        .then((r) => {
+          addLog({
+            source: 'system',
+            level: 'system',
+            message: r === 'ok' ? '桥接 SDK 已存在（跳过注入）' : `桥接 SDK 已注入（第 ${injectAttempts} 次）`
+          })
+          if (r === 'ok' || injectAttempts >= 10) stopInject()
+        })
+        .catch(() => {
+          // dom-ready 前调用会抛，忽略，等下一次轮询
+        })
+    }
+    const startInject = () => {
+      stopInject()
+      injectAttempts = 0
+      injectBridge()
+      injectAttempts = 1
+      injectTimer = setInterval(() => {
+        injectAttempts += 1
+        injectBridge()
+        if (injectAttempts >= 10) stopInject()
+      }, 150)
+    }
+
     const onDomReady = () => {
       // 新页面 dom-ready 时清一次旧的等待队列；此后到达的请求都是新页面发的，正常处理
       bridgeRef.current?.resetPending()
-      wv.executeJavaScript(
-        `${webviewPolyfills}\n${webviewBridgeSdk}\nwindow.__QQLINK_WEBVIEW__=true;`
-      ).catch(() => {})
+      startInject()
     }
+
+    // 首次挂载时页面可能已经 dom-ready，补一次
+    startInject()
 
     wv.addEventListener('ipc-message', onIpcMessage)
     wv.addEventListener('console-message', onConsoleMessage)
@@ -659,6 +707,7 @@ function App() {
     wv.addEventListener('dom-ready', onDomReady)
 
     return () => {
+      if (injectTimer) clearInterval(injectTimer)
       wv.removeEventListener('ipc-message', onIpcMessage)
       wv.removeEventListener('console-message', onConsoleMessage)
       wv.removeEventListener('did-start-loading', onDidStartLoading)
