@@ -169,6 +169,17 @@ function App() {
         // 忽略
       }
 
+      // 本地开关是并联的：进入主界面时若它开着，H5 来源必须是 localhost，
+      // 否则会出现「环境显示测试+本地，地址栏却是 module.qqlink.buzz」的矛盾状态
+      const localOn = localStorage.getItem(LOCAL_ENABLED_KEY) === '1'
+      if (localOn) {
+        targetBase = ENV_MODES.local.h5BaseUrl
+        // 上次访问的是线上域名就不复用了，按本地域名重拼
+        if (targetUrl && /^https?:\/\//i.test(targetUrl) && !isUrlForEnv(targetUrl, 'local')) {
+          targetUrl = ''
+        }
+      }
+
       setEnvMode(targetEnv)
       setCurrentBaseUrl(targetBase)
       setLocale(targetLocale)
@@ -190,6 +201,7 @@ function App() {
       try {
         await window.appConfig?.setConfig({
           ...envPresetPatch(mode),
+          ...(localOn ? { h5BaseUrl: ENV_MODES.local.h5BaseUrl } : {}),
           lastModuleId: targetModId,
           webviewUrl: targetUrl
         })
@@ -451,9 +463,9 @@ function App() {
       setCurrentModuleId(mod.id)
       localStorage.setItem('qqlink_last_module_id', mod.id)
 
-      const fullUrl = withAppChannel(
-        buildModuleUrl(currentBaseUrl, mod.path, locale, withDebugParams)
-      )
+      const localOn = localStorage.getItem(LOCAL_ENABLED_KEY) === '1'
+      const modBase = localOn ? ENV_MODES.local.h5BaseUrl : currentBaseUrl
+      const fullUrl = withAppChannel(buildModuleUrl(modBase, mod.path, locale, withDebugParams))
       setUrl(fullUrl)
       setInputUrl(fullUrl)
       localStorage.setItem('qqlink_last_visited_url', fullUrl)
