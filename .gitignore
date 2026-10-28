@@ -52,3 +52,6 @@ macmini*
 # TypeScript 增量构建缓存（不应提交）
 *.tsbuildinfo
 .DS_Store
+
+# macOS 公证凭据（本地私用，不提交）
+build/appleNotarize.credentials.mjs

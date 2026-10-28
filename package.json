@@ -24,7 +24,8 @@
     "build:win:x64": "npm run build && electron-builder --win --x64",
     "build:win:arm64": "npm run build && electron-builder --win --arm64",
     "build:all": "npm run build && electron-builder --mac --win",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "build:mac:signed": "npm run build && node scripts/build.mac.mjs"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.3.7",

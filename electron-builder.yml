@@ -34,18 +34,17 @@ artifactName: QQLink-H5-Bridge-${version}-${os}-${arch}.${ext}
 mac:
   category: public.app-category.developer-tools
   darkModeSupport: true
-  # 本地打包默认不签名。
-  # 原因：钥匙串里若存在已吊销/过期的证书，electron-builder 会自动拿去签名，
-  # 随后 codesign --verify 报 CSSMERR_TP_CERT_REVOKED 导致打包失败。
-  # 有可用的 Developer ID 证书、需要签名分发时，把下面这行删掉（或改成证书名：
-  # identity: "Developer ID Application: XXX (TEAMID)"）。
-  identity: null
+  # 与 qqlink_im_pc 使用同一套证书/团队（Xiamen Huiqi Xincheng Media Co., Ltd. / M7446VU8K4）。
+  # 钥匙串里另有已吊销的旧证书 QQLINK LTD (9QXR8GK5HL)，必须显式指定，不能被自动选中。
+  # electron-builder 要求不带 "Developer ID Application:" 前缀。
+  identity: "Xiamen Huiqi Xincheng Media Co., Ltd. (M7446VU8K4)"
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # 未签名时关闭公证，避免打包报错（有证书并需要公证时改为 true 并配置 APPLE_ID 等环境变量）
-  notarize: false
+  # 公证凭据由 scripts/build.mac.mjs 从 build/appleNotarize.credentials.mjs 注入
+  # （APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）；CI 用环境变量覆盖。
+  notarize: true
   target:
     - target: dmg
       arch:
