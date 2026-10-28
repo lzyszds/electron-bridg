@@ -452,8 +452,10 @@ function registerBridgeIpc(): void {
   // getNodeConfig handler：返回当前环境对应的节点 txt 原文（还原 Flutter JsBridgeNodeConfig）
   ipcMain.handle(BRIDGE_CHANNELS.GET_NODE_CONFIG, () => {
     const cfg = loadConfig()
-    const preset = ENV_PRESETS[cfg.envMode] || ENV_PRESETS.prod
-    console.log(`[Proxy Bridge] getNodeConfig (${cfg.envMode}): ${preset.nodeConfigUrl}`)
+    const preset = ENV_PRESETS[cfg.envMode === 'local' ? (cfg.localBackend || 'test') : cfg.envMode] || ENV_PRESETS.prod
+    // 本地 H5 也按所选后端环境下发节点
+    const envLabel = cfg.envMode === 'local' ? `local→${cfg.localBackend || 'test'}` : cfg.envMode
+    console.log(`[Proxy Bridge] getNodeConfig (${envLabel}): ${preset.nodeConfigUrl}`)
     return {
       data: {
         url: preset.nodeConfigUrl,
