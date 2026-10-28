@@ -248,6 +248,7 @@ function App() {
       setUrl(nextUrl)
       setInputUrl(nextUrl)
       localStorage.setItem('qqlink_last_visited_url', nextUrl)
+      setBridgeReady(false)
       try {
         await window.appConfig?.setConfig({ lastModuleId: mod.id, webviewUrl: nextUrl })
         webviewRef.current?.loadURL(nextUrl)
@@ -513,7 +514,18 @@ function App() {
 
   const handleBack = () => webviewRef.current?.goBack()
   const handleForward = () => webviewRef.current?.goForward()
-  const handleRefresh = () => webviewRef.current?.reload()
+  /**
+   * 刷新 / 跳转前先把桥接状态复位
+   *
+   * 页面一刷新，H5 里的 WebViewJSBridge 实例就没了，宿主这边必须把「已就绪」清掉、
+   * 重新注入 SDK，否则会出现「页面刷出来了但桥接没建立」的情况。
+   */
+  const reloadWebview = useCallback(() => {
+    setBridgeReady(false)
+    webviewRef.current?.reload()
+  }, [])
+
+  const handleRefresh = () => reloadWebview()
 
   // ===== 初始化 JsBridge（仅在 main 页面） =====
   useEffect(() => {
@@ -586,7 +598,11 @@ function App() {
 
     const onDidStartLoading = () => {
       setIsLoading(true)
+      // 任何一次加载（刷新/跳转/H5 自身 location 变化）都会销毁页面里的桥，
+      // 统一在这里复位，等 H5 重新发 ready 再置回已就绪
       setBridgeReady(false)
+      // 换页后旧的请求回调全部作废，避免回包打到新页面的旧 id 上
+      bridgeRef.current?.resetPending()
     }
 
     const syncUrlFromWebview = () => {
@@ -625,6 +641,7 @@ function App() {
     }
 
     const onDomReady = () => {
+      bridgeRef.current?.resetPending()
       wv.executeJavaScript(
         `${webviewPolyfills}\n${webviewBridgeSdk}\nwindow.__QQLINK_WEBVIEW__=true;`
       ).catch(() => {})

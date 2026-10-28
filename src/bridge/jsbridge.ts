@@ -61,6 +61,17 @@ export class JsBridge {
       this.onReady?.()
       return true
     })
+
+    // H5 刷新后 SDK 会重新执行，ready 事件可能早于我们的注入，这里再兜一次
+    this.registerHandler('jsbridgeReady', async () => {
+      this.onReady?.()
+      return true
+    })
+  }
+
+  /** 页面重新加载后调用：清空等待中的 Native -> H5 回调，防止旧请求挂死 */
+  resetPending(): void {
+    this.completers.clear()
   }
 
   registerHandler(handlerName: string, handler: JsBridgeHandler): void {
@@ -144,7 +155,16 @@ export class JsBridge {
   private postMessage(message: JsBridgeMessage): void {
     const jsonString = JSON.stringify(message)
     const encodeString = encodeURIComponent(jsonString)
-    void this.executor(`WebViewJSBridge.onMessageReceived("${encodeString}")`)
+    // webview 正在加载/刷新时 executeJavaScript 会抛「must be attached ... dom-ready」，
+    // 以前没接住就成了未捕获异常，回包直接丢失。这里吞掉即可：H5 会在 ready 后重发请求。
+    try {
+      const result = this.executor(`WebViewJSBridge.onMessageReceived("${encodeString}")`)
+      if (result && typeof (result as Promise<unknown>).catch === 'function') {
+        void (result as Promise<unknown>).catch(() => {})
+      }
+    } catch {
+      // 忽略：webview 尚未就绪
+    }
   }
 
   private receiverCallResponse(message: JsBridgeMessage): void {
