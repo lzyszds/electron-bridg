@@ -544,6 +544,14 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
     log('[getNodeConfig] 获取当前环境节点配置', data)
     const result = await window.bridge.getNodeConfig()
     log('[getNodeConfig] 结果:', result)
+    // H5 的 fetchNodeConfigFromApp 既接受 { data: {...} } 也接受 {...}，但 webview preload
+    // 的 contextBridge 会把 Promise 返回值深拷贝一次，嵌套的 data 偶尔会丢。
+    // 这里统一摊平成顶层字段，保证 content 一定能被 H5 读到（否则会报 node config empty）。
+    const nodeUrl = result?.data?.url || ''
+    const nodeContent = result?.data?.content || ''
+    if (!nodeContent) {
+      log('[getNodeConfig] 警告：节点内容为空，H5 会退回默认节点')
+    }
 
     deps.logWire?.({
       action: 'getNodeConfig',
@@ -565,7 +573,12 @@ export function registerHandlers(bridge: JsBridge, deps: HandlerDeps): void {
       }
     })
 
-    return result
+    return {
+      // 两种壳形同时给出，兼容 H5 的 normalizeNodeConfigResponse
+      url: nodeUrl,
+      content: nodeContent,
+      data: { url: nodeUrl, content: nodeContent }
+    }
   })
 
   // 钱包 WebSocket 桥接：还原 Flutter JsBridgeWalletWs
