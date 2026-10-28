@@ -12,6 +12,7 @@ import {
   BRIDGE_CHANNELS,
   type BridgeApi,
   type HttpRequestPayload,
+  type HttpResponseResult,
   type SaveImagePayload
 } from '../shared/bridge'
 
@@ -108,7 +109,7 @@ const bridgeApi: BridgeApi = {
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.OPEN_EXTERNAL, url),
 
-  httpRequest: (payload: HttpRequestPayload): Promise<unknown> =>
+  httpRequest: (payload: HttpRequestPayload): Promise<HttpResponseResult> =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.HTTP_REQUEST, payload),
 
   selectFile: (allowList?: string[]): Promise<string | null> =>

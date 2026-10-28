@@ -19,6 +19,8 @@
     "electron.vite.config.ts",
     "electron/main/**/*.ts",
     "electron/preload/**/*.ts",
-    "electron/shared/**/*.ts"
+    "electron/shared/**/*.ts",
+    // preload 会把 webview 用的桥接 SDK 源码直接内联进单文件产物，必须纳入编译范围
+    "src/bridge/sdk.ts"
   ]
 }
