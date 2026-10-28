@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, Fragment } from 'react'
 import type { WebviewTag } from 'electron'
 import { useBridgeStore } from './store/useBridgeStore'
+import { defaultBridgeConfig } from './bridge/types'
 import { useLogStore } from './store/useLogStore'
 import { getDeviceProfile, DEVICE_PROFILES } from './bridge/device-profiles'
 import { JsBridge, type JsBridgeEvent } from './bridge/jsbridge'
@@ -57,6 +58,9 @@ type PageState = 'checking' | 'login' | 'main'
 
 /** 记录「用户主动退出登录」的环境，避免重启后被残留 token 自动带回主页 */
 const LOGGED_OUT_KEY = 'qqlink_logged_out_env'
+
+/** 本地模式选择的线上后端（prod / test），本地 H5 的账号与接口跟着它走 */
+const LOCAL_BACKEND_KEY = 'qqlink_local_backend'
 
 function App() {
   const [pageState, setPageState] = useState<PageState>('checking')
@@ -148,6 +152,20 @@ function App() {
       }
       if (localLastMod) targetModId = localLastMod
 
+      // 自动登录成功：写入该环境对应的 token，并归档，供本地模式复用
+      try {
+        const saved = useBridgeStore.getState().getAuthForEnv(mode)
+        if (saved && saved.userID) {
+          ;(['token', 'secretKey', 'imToken', 'chatToken', 'userID'] as const).forEach((k) => {
+            if (saved[k] && saved[k] !== useBridgeStore.getState().auth[k]) {
+              useBridgeStore.getState().setAuth(k, saved[k])
+            }
+          })
+        }
+      } catch {
+        // 忽略
+      }
+
       setEnvMode(targetEnv)
       setCurrentBaseUrl(targetBase)
       setLocale(targetLocale)
@@ -185,73 +203,134 @@ function App() {
 
   // 待切换的目标环境模式（非 null 时唤起二次确认提醒弹窗）
   const [pendingEnvMode, setPendingEnvMode] = useState<EnvMode | null>(null)
+  /** 本地模式当前使用的后端环境（仅用于展示，真实值存在 localStorage） */
+  const [localBackend, setLocalBackend] = useState<'prod' | 'test'>('test')
 
   // ===== 用户请求切换环境模式：唤起二次确认弹窗 =====
   /**
-   * 切到本地模式：只改 H5 来源，登录态原地保留
+   * 把当前内存里的凭据归档到「当前环境」名下
    *
-   * 本地 H5 跑在 localhost:8888，但接口仍走测试环境，和 test 是同一套账号，
-   * 所以这里不清凭据、不退登录页，直接把地址栏与 webview 切过去。
+   * 正式 / 测试各存一套，切过去时直接取出来用；本地模式归到它选择的后端名下，
+   * 这样本地与对应的线上环境共享同一套账号。
    */
-  const switchToLocalMode = useCallback(async () => {
-    const preset = ENV_MODES.local
-    const prevMode = envMode
-    setEnvMode('local')
-    setCurrentBaseUrl(preset.h5BaseUrl)
-    localStorage.setItem('qqlink_env_mode', 'local')
+  const archiveCurrentAuth = useCallback(() => {
+    const env = localStorage.getItem('qqlink_env_mode') || 'prod'
+    const auth = useBridgeStore.getState().auth
+    if (auth.userID || auth.token) {
+      useBridgeStore.getState().setAuthForEnv(env, auth)
+    }
+  }, [])
 
+  /** 从指定环境的归档里恢复凭据；没有可用凭据返回 false */
+  const restoreAuthFor = useCallback((env: string): boolean => {
+    const saved = useBridgeStore.getState().getAuthForEnv(env)
+    if (!saved || !saved.userID) return false
+    const store = useBridgeStore.getState()
+    ;(['token', 'secretKey', 'imToken', 'chatToken', 'userID'] as const).forEach((k) => {
+      store.setAuth(k, saved[k])
+    })
+    setUserID(saved.userID)
+    return true
+  }, [])
+
+  /** 按目标环境重建 webview 地址并导航 */
+  const navigateToEnvModule = useCallback(
+    async (baseUrl: string, reason: string) => {
+      const mod = H5_MODULES.find((m) => m.id === currentModuleId) || H5_MODULES[0]
+      const nextUrl = withAppChannel(buildModuleUrl(baseUrl, mod.path, locale, withDebugParams))
+      setUrl(nextUrl)
+      setInputUrl(nextUrl)
+      localStorage.setItem('qqlink_last_visited_url', nextUrl)
+      try {
+        await window.appConfig?.setConfig({ lastModuleId: mod.id, webviewUrl: nextUrl })
+        webviewRef.current?.loadURL(nextUrl)
+      } catch {
+        // 忽略未就绪，src 属性会兜底
+      }
+      addLog({ source: 'system', level: 'system', message: reason })
+    },
+    [currentModuleId, locale, withDebugParams, addLog]
+  )
+
+  /**
+   * 本地开关（开 / 关共用）
+   *
+   * 开：H5 指向 localhost，后端沿用最近一次使用的正式/测试环境，并复用该环境已保存的登录态；
+   * 关：回到打开本地之前的那个线上环境，同样复用它的登录态。
+   * 两边都不弹窗、不强制重新登录。
+   */
+  const handleToggleLocalMode = useCallback(async () => {
+    const savedBackend = localStorage.getItem(LOCAL_BACKEND_KEY)
+    const backend: 'prod' | 'test' = savedBackend === 'prod' ? 'prod' : 'test'
+
+    if (envMode !== 'local') {
+      archiveCurrentAuth()
+      // 关闭时回到的就是当前所在的线上环境
+      const currentBackend: 'prod' | 'test' = envMode === 'test' ? 'test' : 'prod'
+      localStorage.setItem(LOCAL_BACKEND_KEY, currentBackend)
+      setLocalBackend(currentBackend)
+      setEnvMode('local')
+      localStorage.setItem('qqlink_env_mode', 'local')
+
+      const preset = ENV_MODES.local
+      const backPreset = ENV_MODES[currentBackend]
+      setCurrentBaseUrl(preset.h5BaseUrl)
+      try {
+        await window.appConfig?.setConfig({
+          envMode: 'local',
+          h5BaseUrl: preset.h5BaseUrl,
+          walletUrl: backPreset.walletUrl,
+          apiBaseUrl: backPreset.apiBaseUrl
+        })
+      } catch {
+        // 忽略
+      }
+      const restored = restoreAuthFor(currentBackend)
+      await navigateToEnvModule(
+        preset.h5BaseUrl,
+        restored
+          ? `本地模式已开启：H5 → ${preset.h5BaseUrl}，后端沿用【${backPreset.label}】，复用其登录态`
+          : `本地模式已开启：H5 → ${preset.h5BaseUrl}，后端【${backPreset.label}】暂无登录态，请登录一次`
+      )
+      return
+    }
+
+    // 关闭本地：回到 BACKEND 对应的线上环境
+    const preset = ENV_MODES[backend]
+    setEnvMode(backend)
+    localStorage.setItem('qqlink_env_mode', backend)
+    setCurrentBaseUrl(preset.h5BaseUrl)
     try {
-      // wallet/api 保持调用方环境（通常就是 test），只有 h5BaseUrl 换成本地
-      const cfg = await window.appConfig?.getConfig()
       await window.appConfig?.setConfig({
-        envMode: 'local',
+        envMode: backend,
         h5BaseUrl: preset.h5BaseUrl,
-        // 钱包/Chat 仍是 test 的地址就不用动，避免把正在用的 test 接口改掉
-        walletUrl: cfg?.walletUrl || preset.walletUrl,
-        apiBaseUrl: cfg?.apiBaseUrl || preset.apiBaseUrl
+        walletUrl: preset.walletUrl,
+        apiBaseUrl: preset.apiBaseUrl
       })
     } catch {
       // 忽略
     }
-
-    // 沿用当前已登录的凭据，切换 webview 到本地 H5
-    const mod = H5_MODULES.find((m) => m.id === currentModuleId) || H5_MODULES[0]
-    const nextUrl = withAppChannel(
-      buildModuleUrl(preset.h5BaseUrl, mod.path, locale, withDebugParams)
+    const restored = restoreAuthFor(backend)
+    await navigateToEnvModule(
+      preset.h5BaseUrl,
+      restored
+        ? `本地模式已关闭：回到【${preset.label}】，复用其登录态`
+        : `本地模式已关闭：回到【${preset.label}】，该环境暂无登录态，请登录一次`
     )
-    setUrl(nextUrl)
-    setInputUrl(nextUrl)
-    localStorage.setItem('qqlink_last_visited_url', nextUrl)
-    try {
-      await window.appConfig?.setConfig({ lastModuleId: mod.id, webviewUrl: nextUrl })
-    } catch {
-      // 忽略
-    }
-    try {
-      webviewRef.current?.loadURL(nextUrl)
-    } catch {
-      // 忽略未就绪，src 属性会兜底
-    }
+  }, [envMode, archiveCurrentAuth, restoreAuthFor, navigateToEnvModule])
 
-    addLog({
-      source: 'system',
-      level: 'system',
-      message: `已切换至【${preset.label}】：H5 来源改为 ${preset.h5BaseUrl}，沿用【${ENV_MODES[prevMode]?.label || prevMode}】的登录态，无需重新登录`
-    })
-  }, [envMode, currentModuleId, locale, withDebugParams, addLog])
+  // 本地后端展示值跟随 localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem(LOCAL_BACKEND_KEY)
+    setLocalBackend(saved === 'prod' ? 'prod' : 'test')
+  }, [envMode])
 
   const handleRequestSwitchEnvMode = useCallback(
     (newMode: EnvMode) => {
       if (newMode === envMode) return
-      // 本地模式与测试环境共用同一套账号和接口（wallet / chat 都指向 buzz），
-      // 不需要重新登录，直接切换 H5 来源即可。
-      if (newMode === 'local') {
-        void switchToLocalMode()
-        return
-      }
       setPendingEnvMode(newMode)
     },
-    [envMode, switchToLocalMode]
+    [envMode]
   )
 
   // ===== 二次确认提醒后：确认切换环境并强制退回登录页 =====
@@ -346,6 +425,9 @@ function App() {
   const resetAuthState = useCallback(
     (reason: string, targetEnv?: EnvMode) => {
       const mode = targetEnv || envMode
+      // 只清「正在使用的这套」凭据；另一套环境（正式/测试）的归档保持不动，
+      // 这样切回去还能直接登录，不用重新输密码。
+      useBridgeStore.getState().setAuthForEnv(mode, { ...defaultBridgeConfig.auth })
       // 先打标记再清 token：启动时的自动登录会据此直接停在登录页
       localStorage.setItem(LOGGED_OUT_KEY, mode)
       window.auth?.logout(mode)
@@ -744,7 +826,7 @@ function App() {
         <div className="h-10 w-full flex items-center gap-2 px-4 bg-slate-50/70">
           {/* 环境切换胶囊开关 (正式 main / 测试 test / 本地 local) */}
           <div className="flex items-center rounded-lg bg-slate-100/90 p-0.5 border border-slate-200 shrink-0">
-            {(Object.keys(ENV_MODES) as EnvMode[]).map((mode) => {
+            {(['prod', 'test'] as EnvMode[]).map((mode) => {
               const preset = ENV_MODES[mode]
               const active = envMode === mode
               return (
@@ -780,6 +862,39 @@ function App() {
                 </button>
               )
             })}
+
+            {/* 本地开关：开 → H5 走 localhost，后端沿用最近一次选中的正式/测试；关 → 回到原线上环境 */}
+            <button
+              type="button"
+              onClick={() => handleToggleLocalMode()}
+              className={cn(
+                'ml-0.5 h-6 px-2 rounded-md transition-all flex items-center gap-1.5 cursor-pointer',
+                envMode === 'local'
+                  ? 'bg-white text-emerald-600 shadow-xs border border-emerald-200'
+                  : 'text-slate-400 hover:text-slate-700'
+              )}
+              title={
+                envMode === 'local'
+                  ? `本地模式已开启（${ENV_MODES.local.h5BaseUrl}，后端：${ENV_MODES[localBackend].label}）— 点击关闭`
+                  : '打开本地模式：H5 指向 localhost，账号沿用最近一次选择的正式/测试环境'
+              }
+              aria-pressed={envMode === 'local'}
+            >
+              <span
+                className={cn(
+                  'relative inline-flex h-3 w-5 items-center rounded-full transition-colors',
+                  envMode === 'local' ? 'bg-emerald-500' : 'bg-slate-300'
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute h-2 w-2 rounded-full bg-white shadow transition-all',
+                    envMode === 'local' ? 'left-2.5' : 'left-0.5'
+                  )}
+                />
+              </span>
+              <span className="text-[10px] font-black tracking-wider">本地</span>
+            </button>
           </div>
 
           {/* 垂直分割线 */}

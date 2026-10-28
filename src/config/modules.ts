@@ -194,6 +194,9 @@ export const BASE_URL_PRESETS = [
 
 export type EnvMode = 'prod' | 'test' | 'local'
 
+/** 本地模式下实际使用的后端环境：本地只提供 H5，账号与接口要选正式或测试 */
+export type LocalBackend = 'prod' | 'test'
+
 export interface EnvPresetItem {
   mode: EnvMode
   label: string
